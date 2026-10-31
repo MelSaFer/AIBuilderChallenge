@@ -5,15 +5,16 @@ serve those files, and talk to Claude so the API key never reaches the browser.
 """
 
 import os
+from datetime import date
 from pathlib import Path
-from typing import List
+from typing import Annotated, List
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from cooking import (
     CookingError, MealName, PlannedMeal, Recipe,
@@ -27,14 +28,21 @@ app = FastAPI(title="Mise")
 
 
 # ---------- What the page sends ----------
+MAX_PANTRY = 500  # items; the page checks this too and says so
+Short = Annotated[str, StringConstraints(max_length=60)]
+PantryItem = Annotated[str, StringConstraints(max_length=100)]
+Title = Annotated[str, StringConstraints(max_length=200)]
+WEEKDAY_NAMES = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+
+
 class Person(BaseModel):
     name: str = Field(default="", max_length=60)
-    restrictions: List[str] = Field(default_factory=list, max_length=30)
+    restrictions: List[Short] = Field(default_factory=list, max_length=30)
     notes: str = Field(default="", max_length=300)
 
 
 class PantryInfo(BaseModel):
-    pantry: List[str] = Field(default_factory=list, max_length=300)
+    pantry: List[PantryItem] = Field(default_factory=list, max_length=MAX_PANTRY)
     has_basics: bool = True
     people: List[Person] = Field(default_factory=list, max_length=12)
 
@@ -56,13 +64,26 @@ class Slot(BaseModel):
     max_minutes: int = Field(ge=5, le=300)
     relaxed: bool = False
 
+    @field_validator("date")
+    @classmethod
+    def real_date(cls, value):
+        date.fromisoformat(value)  # "2026-99-99" raises, which becomes a 400
+        return value
+
+    @field_validator("weekday")
+    @classmethod
+    def real_weekday(cls, value):
+        if value not in WEEKDAY_NAMES:
+            raise ValueError("unknown weekday")
+        return value
+
 
 class PlanRequest(PantryInfo):
     slots: List[Slot] = Field(min_length=1, max_length=21)  # one week at most
     diet: str = Field(default="", max_length=200)
     requirements: str = Field(default="", max_length=600)
     leftovers: bool = False
-    avoid: List[str] = Field(default_factory=list, max_length=150)
+    avoid: List[Title] = Field(default_factory=list, max_length=150)
     repeats: bool = False
     replace: str = Field(default="", max_length=200)  # a meal the user wants swapped
     replace_reason: str = Field(default="", max_length=300)
@@ -76,13 +97,25 @@ class PlanRecipeRequest(PantryInfo):
     def fill_buy(cls, data):
         # Plans saved before "buy" or "package" existed don't have them: fill in sensible values.
         meal = data.get("meal") if isinstance(data, dict) else None
-        if isinstance(meal, dict):
-            for ing in meal.get("ingredients") or []:
+        if isinstance(meal, dict) and isinstance(meal.get("ingredients"), list):
+            for ing in meal["ingredients"]:
                 if isinstance(ing, dict) and "buy" not in ing:
                     ing["buy"] = "" if ing.get("have_it") else ing.get("quantity", "")
                 if isinstance(ing, dict) and "package" not in ing:
                     ing["package"] = ""
         return data
+
+    @model_validator(mode="after")
+    def not_too_big(self):
+        # The meal comes back from the browser, so it gets the same size limits as everything else.
+        m = self.meal
+        if len(m.title) > 200 or len(m.description) > 600 or len(m.ingredients) > 40:
+            raise ValueError("meal too large")
+        if any(len(i.name) > 100 or len(i.quantity) > 40 or len(i.buy) > 40 or len(i.package) > 40
+               for i in m.ingredients):
+            raise ValueError("ingredient too large")
+        date.fromisoformat(m.date)
+        return self
 
 
 # ---------- Helpers ----------
@@ -107,7 +140,10 @@ def _error(message: str, status: int = 502) -> JSONResponse:
 
 
 @app.exception_handler(RequestValidationError)
-def bad_request(_, __):
+def bad_request(_, exc: RequestValidationError):
+    if any(err.get("loc", [None, None])[1:2] == ("pantry",) for err in exc.errors()):
+        return _error(
+            f"Your pantry is too long. Keep it under {MAX_PANTRY} items of up to 100 characters each.", 400)
     return _error("Some of the details sent were invalid. Check the form and try again.", 400)
 
 

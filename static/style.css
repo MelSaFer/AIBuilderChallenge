@@ -6,7 +6,7 @@
   --edge: #C3CACC;
   --paper: #FCFCFA;
   --ink: #1C2631;
-  --muted: #55626C;
+  --muted: #4D5963; /* readable on the pantry grey too (4.99:1) */
   --marker: #1F5FA8;
   --marker-dark: #184C88;
   --tape: #F5D466;
@@ -153,7 +153,7 @@ main {
   font: inherit;
   color: var(--ink);
 }
-.field input::placeholder, .field textarea::placeholder { color: #7A8790; }
+.field input::placeholder, .field textarea::placeholder { color: #66727C; }
 .field textarea { resize: vertical; }
 .field select { cursor: pointer; }
 .field input + input { margin-top: 0.6rem; }
@@ -515,7 +515,7 @@ fieldset .check { margin-top: 0.75rem; }
   font-stretch: 85%;
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--tomato);
+  color: var(--danger); /* darker red so it reads on the yellow tape */
 }
 .day-meals { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 0.75rem; }
 .day-empty { color: var(--muted); align-self: center; margin: 0; }
@@ -601,7 +601,7 @@ fieldset .check { margin-top: 0.75rem; }
   font: inherit;
   color: var(--ink);
 }
-.pantry-add-row input::placeholder { color: #7A8790; }
+.pantry-add-row input::placeholder { color: #66727C; }
 
 /* One row per ingredient: name, amount + unit, − + and remove */
 .pantry-list { list-style: none; margin: 1.25rem 0 0; padding: 0; border-top: 2px solid var(--ink); }
@@ -642,7 +642,7 @@ fieldset .check { margin-top: 0.75rem; }
   text-align: right;
   color: var(--ink);
 }
-.pi-number::placeholder { color: #8A96A0; }
+.pi-number::placeholder { color: #66727C; }
 .pi-unit {
   flex: none;
   width: 4.1rem;
@@ -729,7 +729,7 @@ fieldset .check { margin-top: 0.75rem; }
   font: inherit;
   line-height: 1.6em;
 }
-.pantry textarea::placeholder { color: #7A8790; }
+.pantry textarea::placeholder { color: #66727C; }
 
 /* ---------- Meal dialog ---------- */
 dialog {
@@ -952,4 +952,33 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 }
 @media (pointer: coarse) {
   .buy-box .pi-amount { width: 8.75rem; }
+}
+
+/* ---------- Fixes from the QA review ---------- */
+/* A week where some meals couldn't be planned */
+.week-missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.9rem;
+  background: var(--tomato-tint);
+  border-left: 4px solid var(--tomato);
+  border-radius: var(--r-paper);
+}
+.week-missing p { margin: 0; color: var(--danger); font-weight: 700; }
+
+/* Remove one shopping-list item */
+.buy-box .item-remove { flex: none; }
+
+/* A typed amount that isn't a number */
+.pi-number[aria-invalid="true"] { color: var(--danger); background: var(--tomato-tint); }
+
+/* Small phones: the meals grid fits, weekend included */
+@media (max-width: 480px) {
+  .meal-grid th, .meal-grid td { padding: 0.3rem 0.12rem; }
+  .meal-grid th[scope="row"] { padding-right: 0.4rem; font-size: 0.85rem; }
+  .meal-grid th[scope="col"] { font-size: 0.8rem; }
+  .meal-grid input { margin: 0; }
 }

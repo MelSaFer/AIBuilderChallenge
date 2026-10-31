@@ -53,15 +53,98 @@ function defaultSettings() {
   };
 }
 
-let settings = { ...defaultSettings(), ...store.load("settings", {}) };
-// shopping: { key: { name, quantities: [], category, recipes: [], sources: [], done } }
-let shopping = store.load("shopping", {});
-// plan: { start, length, servings, weeks: [{ start, end, done, meals: [...] }] }
-let plan = store.load("plan", null);
+// ---------- Saved data can be old or damaged: check it and fall back to defaults ----------
+const isObject = (x) => x && typeof x === "object" && !Array.isArray(x);
+const isIso = (x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && !isNaN(parseDate(x));
+
+function cleanSettings(saved) {
+  const d = defaultSettings();
+  if (!isObject(saved)) return d;
+  const out = { ...d, ...saved };
+  if (![7, 14, 30].includes(out.length)) out.length = d.length;
+  if (!isIso(out.start)) out.start = d.start;
+  out.meals = {};
+  for (const m of MEALS) {
+    const days = saved.meals?.[m];
+    out.meals[m] = Array.isArray(days) && days.length === 7 ? days.map(Boolean) : d.meals[m];
+  }
+  const people = Array.isArray(saved.people) && saved.people.length ? saved.people.slice(0, 12) : d.people;
+  out.people = people.map((x) => ({
+    name: typeof x?.name === "string" ? x.name : "",
+    restrictions: Array.isArray(x?.restrictions) ? x.restrictions.filter((r) => typeof r === "string") : [],
+    notes: typeof x?.notes === "string" ? x.notes : "",
+  }));
+  for (const k of ["weekdayMinutes", "weekendMinutes"]) if (!MINUTES.includes(Number(out[k]))) out[k] = d[k];
+  for (const k of ["relaxed", "leftovers", "repeats"]) if (typeof out[k] !== "boolean") out[k] = d[k];
+  for (const k of ["diet", "dietOther", "requirements"]) if (typeof out[k] !== "string") out[k] = "";
+  return out;
+}
+
+function cleanMeal(m) {
+  return isObject(m) && isIso(m.date) && MEALS.includes(m.meal) && typeof m.title === "string" && Array.isArray(m.ingredients)
+    ? { description: "", total_time_minutes: 0, ...m, ingredients: m.ingredients.filter((i) => isObject(i) && typeof i.name === "string") }
+    : null;
+}
+
+function cleanPlan(saved) {
+  if (!isObject(saved) || !isIso(saved.start) || !Array.isArray(saved.weeks) || !saved.weeks.length) return null;
+  const weeks = saved.weeks.filter((w) => isObject(w) && isIso(w.start) && isIso(w.end)).map((w) => {
+    const meals = Array.isArray(w.meals) ? w.meals.map(cleanMeal).filter(Boolean) : null;
+    // A week with no readable meals is planned again.
+    return { ...w, meals: meals || [], done: meals ? Boolean(w.done) : false,
+             missing: Array.isArray(w.missing) ? w.missing : [] };
+  });
+  if (!weeks.length) return null;
+  const length = [7, 14, 30].includes(saved.length) ? saved.length : weeks.length * 7;
+  return { ...saved, length, weeks, servings: Number(saved.servings) || 1,
+           people: Array.isArray(saved.people) ? saved.people.filter((x) => typeof x === "string") : [],
+           settings: isObject(saved.settings) ? cleanSettings(saved.settings) : undefined };
+}
+
+// Every shopping item keeps three lists in step: one entry per recipe that needs it.
+function fixItem(item) {
+  const q = Array.isArray(item.quantities) ? item.quantities.map(String) : [];
+  const recipes = Array.isArray(item.recipes) ? item.recipes.map(String) : [];
+  item.quantities = q;
+  item.sources = q.map((_, i) => String(item.sources?.[i] ?? `old|${i}`));
+  item.labels = q.map((_, i) => String(item.labels?.[i] ?? recipes[i] ?? recipes[0] ?? ""));
+  item.recipes = [...new Set(item.labels.filter(Boolean))];
+  item.category = typeof item.category === "string" ? item.category : "Other";
+  item.done = Boolean(item.done);
+  return item;
+}
+
+function cleanShopping(saved) {
+  if (!isObject(saved)) return {};
+  const out = {};
+  for (const [key, item] of Object.entries(saved)) {
+    if (isObject(item) && typeof item.name === "string") out[key] = fixItem(item);
+  }
+  return out;
+}
+
+let settings = cleanSettings(store.load("settings", {}));
+// shopping: { key: { name, category, package, quantities: [], sources: [], labels: [], recipes: [], done, buyAmount } }
+let shopping = cleanShopping(store.load("shopping", {}));
+// plan: { start, length, servings, people, settings, weeks: [{ start, end, done, meals: [...], missing: [] }] }
+let plan = cleanPlan(store.load("plan", null));
 // Full recipes opened from the plan, by "date|meal".
-let planRecipes = store.load("planRecipes", {});
+let planRecipes = isObject(store.load("planRecipes", {})) ? store.load("planRecipes", {}) : {};
 let planning = false;
 let planError = ""; // shown next to the week that couldn't be planned
+const swapping = new Set(); // "date|meal" of meals being swapped right now
+
+// The settings a plan was made with (later edits to the form don't change a plan in progress).
+function planSettings() {
+  return plan?.settings || settings;
+}
+function mealKey(meal) {
+  return `${meal.date}|${meal.meal}`;
+}
+// Shopping-list source for a plan meal; the title makes a swapped meal a different source.
+function mealSource(meal) {
+  return `${meal.date}|${meal.meal}|${meal.title}`;
+}
 
 // ---------- Small helpers ----------
 function el(tag, attrs = {}, ...children) {
@@ -86,6 +169,9 @@ function plural(n, one, many) {
 let toastTimer;
 function toast(message) {
   const box = $("toast");
+  // An open dialog covers the page, so show the message inside it.
+  const host = document.querySelector("dialog[open]") || document.body;
+  if (box.parentElement !== host) host.append(box);
   box.textContent = message;
   box.classList.add("show");
   clearTimeout(toastTimer);
@@ -127,16 +213,25 @@ function longDate(iso) {
 // "3/4 cup" -> "180 ml", "1 1/2 cups" -> "360 ml", "1/2 tsp" -> "0.5 tsp", "8 oz" -> "227 g".
 // Older lists saved "3/4 cup" as "3 /4 cup", so a space before the slash is accepted too.
 // Anything else comes back unchanged.
+const VULGAR = { "½": " 1/2", "¼": " 1/4", "¾": " 3/4", "⅓": " 1/3", "⅔": " 2/3", "⅛": " 1/8" };
+// Units that measure something. Any other word after a number ("2 eggs", "3 large") is a plain count.
+const MEASURES = new Set(["g", "kg", "ml", "l", "tsp", "tbsp", "clove", "cloves", "head", "heads", "bunch", "bunches",
+  "can", "cans", "jar", "jars", "bottle", "bottles", "pack", "packs", "packet", "packets", "slice", "slices",
+  "pinch", "pinches", "sprig", "sprigs", "stalk", "stalks", "leaf", "leaves", "sheet", "sheets", "handful", "handfuls"]);
 const TO_METRIC = {
   cup: [240, "ml"], cups: [240, "ml"], "fl oz": [30, "ml"],
   oz: [28.35, "g"], ounce: [28.35, "g"], ounces: [28.35, "g"],
   lb: [453.6, "g"], lbs: [453.6, "g"], pound: [453.6, "g"], pounds: [453.6, "g"],
 };
 function normalizeAmount(text) {
-  const t = String(text).trim();
+  let t = String(text ?? "").trim();
+  for (const [k, v] of Object.entries(VULGAR)) t = t.replaceAll(k, v);
+  t = t.trim().replace(/\s+/g, " ");
   const m = t.toLowerCase().match(/^(?:(\d+)\s+(?=\d+\s*\/))?(\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+))?\s*([a-z][a-z ]*?)?\.?$/);
   if (!m) return t;
-  const n = (m[1] ? Number(m[1]) : 0) + parseFloat(m[2].replace(",", ".")) / (m[3] ? Number(m[3]) : 1);
+  const den = m[3] ? Number(m[3]) : 1;
+  if (!den) return t; // "1/0" isn't an amount
+  const n = (m[1] ? Number(m[1]) : 0) + parseFloat(m[2].replace(",", ".")) / den;
   const unit = (m[4] || "").trim();
   const metric = TO_METRIC[unit];
   if (metric) return `${Math.round(n * metric[0])} ${metric[1]}`;
@@ -149,10 +244,12 @@ function addQuantities(list) {
   const other = [];
   for (const raw of list) {
     const q = normalizeAmount(raw);
+    if (!q) continue;
     // Only "number + simple unit" can be added up; anything else is listed as it is.
     const m = String(q).trim().match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z]*)$/);
     if (!m) { other.push(q); continue; }
     let unit = m[2].trim().toLowerCase();
+    if (!MEASURES.has(unit)) unit = ""; // "3 large" and "2 eggs" are counts
     let n = parseFloat(m[1].replace(",", "."));
     // Count kg as g and l as ml so "1 kg" + "500 g" adds up to "1.5 kg".
     if (unit === "kg" || unit === "l") [n, unit] = [n * 1000, unit === "kg" ? "g" : "ml"];
@@ -252,6 +349,10 @@ function pantryRow(item, i) {
     const items = pantry().map(splitPantryLine);
     if (!items[i]) return;
     const n = number.value.trim().replace(/,(?!\d)/g, "");
+    // Only numbers are saved; anything else is marked and left out until it's fixed.
+    const valid = !n || /^\d+(?:[.,]\d+)?$/.test(n);
+    number.toggleAttribute("aria-invalid", !valid);
+    if (!valid) { number.setAttribute("aria-invalid", "true"); return; }
     items[i].amount = n ? `${n}${unit.value ? " " + unit.value : ""}` : "";
     writePantry(items, false);
     refresh();
@@ -267,14 +368,12 @@ function pantryRow(item, i) {
 
   number.addEventListener("input", save);
   unit.addEventListener("change", () => {
-    // Switching between g and kg (or ml and l) converts the number too, but only when the number
-    // fits the old unit: 500 g -> 0.5 kg, yet "1" + ml -> l just means the user meant 1 l.
+    // Switching between g and kg (or ml and l) converts the number too: 40 g -> 0.04 kg.
     const n = value();
     const change = `${lastUnit}>${unit.value}`;
-    const toBig = (change === "g>kg" || change === "ml>l") && n >= 50;
-    const toSmall = (change === "kg>g" || change === "l>ml") && n < 50;
-    if (n > 0 && toBig) number.value = tidy(n / 1000);
-    if (n > 0 && toSmall) number.value = tidy(n * 1000);
+    const tidyFine = (x) => String(Math.round(x * 10000) / 10000);
+    if (n > 0 && (change === "g>kg" || change === "ml>l")) number.value = tidyFine(n / 1000);
+    if (n > 0 && (change === "kg>g" || change === "l>ml")) number.value = tidyFine(n * 1000);
     lastUnit = unit.value;
     save();
   });
@@ -327,16 +426,23 @@ function setupPantry() {
     if (!fresh.length) return input.focus();
     const items = pantry().map(splitPantryLine);
     let already = 0;
+    const unclear = [];
     for (const f of fresh) {
       const same = items.find((it) => it.name.toLowerCase() === f.name.toLowerCase());
       if (!same) items.push(f);
-      else if (f.amount) same.amount = same.amount ? addQuantities([same.amount, f.amount]) : f.amount;
-      else already++;
+      else if (!f.amount) already++;
+      else if (!same.amount) same.amount = f.amount;
+      else {
+        const sum = mergeAmounts(same.amount, f.amount);
+        if (sum) same.amount = sum; else unclear.push(f.name);
+      }
     }
     writePantry(items);
     input.value = "";
     input.focus();
-    toast(already === fresh.length ? "Already in your pantry" : "Added to your pantry");
+    toast(unclear.length
+      ? `Couldn't add the amounts for ${unclear.join(", ")}. Change them in the list.`
+      : already === fresh.length ? "Already in your pantry" : "Added to your pantry");
   });
 
   const textToggle = $("pantry-text-toggle");
@@ -365,86 +471,137 @@ function setupPantry() {
 
   updatePantryCount();
 }
-// Adds bought items ({ name, amount }) to the pantry. If the pantry already lists the item
+// Only the parts of an amount that are numbers: "500 g + to taste" -> ["500 g"].
+function amountTerms(amount) {
+  return String(amount ?? "").split("+").map((t) => normalizeAmount(t)).filter((t) => parseAmount(t));
+}
+// Adds two amounts when they add up cleanly ("200 g" + "500 g" = "700 g"); otherwise null.
+function mergeAmounts(a, b) {
+  const sum = addQuantities([...amountTerms(a), ...amountTerms(b)]);
+  return sum && !sum.includes("+") ? sum : null;
+}
+// A bought amount as one clean amount, or "" if there isn't one.
+function cleanAmount(amount) {
+  const terms = amountTerms(amount);
+  const sum = addQuantities(terms);
+  return sum && !sum.includes("+") ? sum : terms[0] || "";
+}
+
+// Adds bought items ({ name, amount }) to the pantry. If the pantry already lists the same item
 // with an amount ("rice 200 g"), the amounts are added up ("rice 700 g").
+// Returns the names whose amounts couldn't be added up (they're left as they were).
 function addToPantry(items) {
-  const lines = pantry();
-  let changed = false;
+  const rows = pantry().map(splitPantryLine);
+  const unclear = [];
   for (const { name, amount } of items) {
-    const lower = name.toLowerCase();
-    const i = lines.findIndex((l) => l.toLowerCase() === lower || l.toLowerCase().startsWith(lower + " "));
-    if (i < 0) {
-      lines.push(amount ? `${name} ${amount}` : name);
-      changed = true;
-    } else {
-      const had = lines[i].slice(name.length).trim();
-      // Without a known amount we can't add up, so leave that line as the user wrote it.
-      if (had && amount) {
-        lines[i] = `${lines[i].slice(0, name.length)} ${addQuantities([had, amount])}`;
-        changed = true;
-      }
+    const clean = cleanAmount(amount);
+    const same = rows.find((r) => r.name.toLowerCase() === name.trim().toLowerCase());
+    if (!same) rows.push({ name, amount: clean });
+    // Without a known amount we can't add up, so leave that line as the user wrote it.
+    else if (same.amount && clean) {
+      const sum = mergeAmounts(same.amount, clean);
+      if (sum) same.amount = sum; else unclear.push(name);
     }
   }
-  if (changed) {
-    $("pantry-input").value = lines.join("\n");
-    updatePantryCount();
-  }
+  writePantry(rows);
+  return unclear;
 }
 
 // ---------- Cooked it: take what a recipe used out of the pantry ----------
 // "200 g" -> { n: 200, unit: "g" }. kg and l become g and ml so they can be compared.
 // Sizes like "3 large" count as plain numbers. Anything else ("to taste", "1/2 cup") -> null.
 function parseAmount(text) {
-  const m = String(text).trim().toLowerCase().match(/^(\d+(?:[.,]\d+)?)\s*([a-z]*)\.?$/);
+  const m = normalizeAmount(text).toLowerCase().match(/^(\d+(?:[.,]\d+)?)\s*([a-z]*)\.?$/);
   if (!m) return null;
   let n = parseFloat(m[1].replace(",", "."));
   let unit = m[2];
   if (unit === "kg" || unit === "l") [n, unit] = [n * 1000, unit === "kg" ? "g" : "ml"];
-  if (["large", "medium", "small", "whole", "pcs", "pieces", "piece"].includes(unit)) unit = "";
+  if (!MEASURES.has(unit)) unit = ""; // "3 large", "2 eggs" and "6 pcs" are counts
   return { n, unit };
 }
 
 // "rice 700 g" -> { name: "rice", amount: "700 g" }; "onion" -> { name: "onion", amount: "" }
 function splitPantryLine(line) {
-  const m = line.match(/^(.*?)\s+(\d+(?:[.,]\d+)?\s*[a-zA-Z]*)$/);
-  return m ? { name: m[1], amount: m[2] } : { name: line, amount: "" };
+  const t = String(line).trim();
+  let m = t.match(/^(.*?)\s+(\d+(?:[.,]\d+)?\s*[a-zA-Z]*)$/);
+  if (m) return { name: m[1], amount: m[2] };
+  // Amount first: "500 g chicken", "2 onions", "1 kg rice"
+  m = t.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|tsp|tbsp)?\s+(.+)$/i);
+  if (m) return { name: m[3], amount: m[2] ? `${m[1]} ${m[2].toLowerCase()}` : m[1] };
+  return { name: t, amount: "" };
 }
 
-// Does the pantry item cover this recipe ingredient? "rice" covers "basmati rice", "egg" covers "eggs".
+// Words that describe an ingredient without making it a different one
+// ("basmati rice" is rice, "chicken breast" is chicken), unlike "coconut milk" or "bell pepper".
+const DESCRIPTORS = new Set(["fresh", "large", "small", "medium", "ripe", "raw", "cooked", "uncooked", "dried", "dry",
+  "frozen", "whole", "boneless", "skinless", "extra", "virgin", "plain", "basmati", "jasmine", "arborio", "long", "short",
+  "grain", "breast", "breasts", "thigh", "thighs", "fillet", "fillets", "minced", "chopped", "sliced", "diced", "grated",
+  "organic", "unsalted", "salted", "lean", "free", "range"]);
+function singular(w) {
+  if (w.endsWith("ies")) return w.slice(0, -3) + "y";
+  if (/(ch|sh|x|o)es$/.test(w)) return w.slice(0, -2);
+  if (w.endsWith("s") && !w.endsWith("ss")) return w.slice(0, -1);
+  return w;
+}
+function coreWords(name) {
+  return new Set(name.toLowerCase().split(/[^a-z]+/).filter(Boolean).filter((w) => !DESCRIPTORS.has(w)).map(singular));
+}
+// Does the pantry item cover this recipe ingredient? Their main words have to be the same.
 function sameItem(pantryName, recipeName) {
-  const words = (s) => s.toLowerCase().split(/[^a-z]+/).filter(Boolean).map((w) => w.replace(/(es|s)$/, ""));
-  const recipeWords = words(recipeName);
-  const pantryWords = words(pantryName);
-  return pantryWords.length > 0 && pantryWords.every((w) => recipeWords.includes(w));
+  const p = coreWords(pantryName);
+  const r = coreWords(recipeName);
+  return p.size > 0 && p.size === r.size && [...p].every((w) => r.has(w));
+}
+// The pantry row for an ingredient: an exact name first, then the same main words.
+function findPantryIndex(rows, name) {
+  const lower = name.trim().toLowerCase();
+  const exact = rows.findIndex((r) => r.name.toLowerCase() === lower);
+  return exact >= 0 ? exact : rows.findIndex((r) => sameItem(r.name, name));
 }
 
-// Subtracts the recipe's ingredients from the pantry. Returns what changed.
+// Subtracts the recipe's ingredients from the pantry. Returns what changed, including
+// a list of line changes ({ before, after }) so it can be undone later.
 function useFromPantry(ingredients) {
-  const lines = pantry();
-  const result = { updated: [], usedUp: [], unchanged: [] };
+  const rows = pantry().map(splitPantryLine);
+  const result = { updated: [], usedUp: [], unchanged: [], changes: [] };
   for (const ing of ingredients) {
-    const i = lines.findIndex((l) => sameItem(splitPantryLine(l).name, ing.name));
+    const i = findPantryIndex(rows, ing.name);
     if (i < 0) continue;
-    const { name, amount } = splitPantryLine(lines[i]);
-    const have = amount ? parseAmount(amount) : null;
+    const row = rows[i];
+    const have = row.amount ? parseAmount(row.amount) : null;
     const need = parseAmount(ing.quantity);
     if (!have || !need || have.unit !== need.unit) {
-      result.unchanged.push(name);
+      result.unchanged.push(row.name);
       continue;
     }
+    const before = `${row.name} ${row.amount}`;
     const left = Math.round((have.n - need.n) * 100) / 100;
     if (left <= 0) {
-      lines.splice(i, 1);
-      result.usedUp.push(name);
+      rows.splice(i, 1);
+      result.usedUp.push(row.name);
+      result.changes.push({ before, after: null });
     } else {
-      const shown = addQuantities([`${left}${have.unit ? " " + have.unit : ""}`]);
-      lines[i] = `${name} ${shown}`;
-      result.updated.push(`${name} ${shown}`);
+      row.amount = addQuantities([`${left}${have.unit ? " " + have.unit : ""}`]);
+      result.updated.push(`${row.name} ${row.amount}`);
+      result.changes.push({ before, after: `${row.name} ${row.amount}` });
     }
   }
-  $("pantry-input").value = lines.join("\n");
-  updatePantryCount();
+  writePantry(rows);
   return result;
+}
+
+// Puts back what "Cooked it" took, without touching anything the user changed since.
+// Returns the lines it couldn't put back.
+function undoPantryChanges(changes) {
+  const lines = pantry();
+  const missed = [];
+  for (const { before, after } of [...changes].reverse()) {
+    if (after === null) { lines.push(before); continue; }
+    const i = lines.indexOf(after);
+    if (i >= 0) lines[i] = before; else missed.push(splitPantryLine(before).name);
+  }
+  writePantry(lines.map(splitPantryLine));
+  return missed;
 }
 
 function cookedSummary({ updated, usedUp, unchanged }) {
@@ -456,8 +613,8 @@ function cookedSummary({ updated, usedUp, unchanged }) {
 }
 
 // What every request to the server includes.
-function kitchen() {
-  return { pantry: pantry(), has_basics: $("basics").checked, people: settings.people };
+function kitchen(people = settings.people) {
+  return { pantry: pantry(), has_basics: $("basics").checked, people };
 }
 
 // ---------- Talking to the server ----------
@@ -524,47 +681,51 @@ function recipeCard(recipe, sourceId = recipe.title) {
         type: "button",
         text: `Add ${plural(missing.length, "missing ingredient", "missing ingredients")} to shopping list`,
         onclick: () => {
-          const added = addIngredients(recipe.ingredients, recipe.title, sourceId);
+          const meal = planRecipes[sourceId] ? findMeal({ date: sourceId.split("|")[0], meal: sourceId.split("|")[1] }) : null;
+          const source = meal ? mealSource(meal.week.meals[meal.index]) : sourceId;
+          const added = addIngredients(recipe.ingredients, recipe.title, source).length;
           toast(added ? `Added ${plural(added, "item", "items")} to your shopping list` : "Already on your shopping list");
         },
       })
     : null;
 
-  // "Cooked it" takes the ingredients out of the pantry. Plan meals remember it.
+  // "Cooked it" takes the ingredients out of the pantry. Plan meals remember it (and how to undo it).
   const inPlan = Boolean(planRecipes[sourceId]);
+  let changes = inPlan ? planRecipes[sourceId].cookedChanges || [] : [];
   const cookedNote = el("div", { class: "cooked-note", role: "status" });
   const cookedButton = el("button", { class: "btn is-done", type: "button" });
+  const undoButton = el("button", { class: "btn", type: "button", text: "Undo cooked" });
   const showCooked = (done) => {
     cookedButton.textContent = done ? "✓ Cooked" : "Cooked it";
     cookedButton.disabled = done;
+    undoButton.hidden = !done;
   };
   showCooked(inPlan && planRecipes[sourceId].cooked);
   cookedButton.addEventListener("click", () => {
-    const before = $("pantry-input").value;
     const result = useFromPantry(recipe.ingredients);
-    setCooked(sourceId, true);
+    changes = result.changes;
+    setCooked(sourceId, true, changes);
     showCooked(true);
-    cookedNote.replaceChildren(
-      el("p", { text: cookedSummary(result) }),
-      el("button", {
-        class: "btn small", type: "button", text: "Undo",
-        onclick: () => {
-          $("pantry-input").value = before;
-          updatePantryCount();
-          setCooked(sourceId, false);
-          showCooked(false);
-          cookedNote.replaceChildren();
-          toast("Pantry restored");
-        },
-      }),
-    );
+    cookedNote.replaceChildren(el("p", { text: cookedSummary(result) }));
     toast("Pantry updated");
+    undoButton.focus();
+  });
+  undoButton.addEventListener("click", () => {
+    const missed = undoPantryChanges(changes);
+    changes = [];
+    setCooked(sourceId, false, []);
+    showCooked(false);
+    cookedNote.replaceChildren(missed.length
+      ? el("p", { text: `Pantry restored, except ${missed.join(", ")}, which you've changed since. Check those by hand.` })
+      : "");
+    toast("Pantry restored");
+    cookedButton.focus();
   });
 
   const action = recipe.steps.length
     ? el("div", {},
         missing.length ? null : el("p", { class: "all-set", text: "You have everything you need." }),
-        el("div", { class: "recipe-actions" }, addButton, cookedButton),
+        el("div", { class: "recipe-actions" }, addButton, cookedButton, undoButton),
         cookedNote,
       )
     : null;
@@ -586,25 +747,93 @@ function recipeCard(recipe, sourceId = recipe.title) {
 
 // ---------- Shopping list ----------
 // Adds the ingredients you don't have. sourceId stops the same meal being added twice.
+// Saves the list and returns the keys of the items it added to.
 function addIngredients(ingredients, label, sourceId) {
-  let added = 0;
+  const keys = new Set();
   for (const ing of ingredients) {
     if (ing.have_it) continue;
-    const key = ing.name.trim().toLowerCase();
-    const item = (shopping[key] ??= {
-      name: ing.name, quantities: [], category: ing.category, recipes: [], sources: [], done: false,
-    });
-    item.sources ??= [...item.recipes];
-    if (item.sources.includes(sourceId)) continue;
-    item.sources.push(sourceId);
-    item.quantities.push(ing.buy || ing.quantity); // older plans have no "buy"
-    if (!item.package && ing.package) item.package = ing.package;
-    if (!item.recipes.includes(label)) item.recipes.push(label);
-    item.done = false;
-    added++;
+    if (addPart(ing.name, ing.category, ing.package, ing.buy || ing.quantity, label, sourceId)) {
+      keys.add(ing.name.trim().toLowerCase());
+    }
   }
   saveShopping();
-  return added;
+  return [...keys];
+}
+
+// One recipe's need for one item. Returns false if that recipe is already counted.
+function addPart(name, category, pack, quantity, label, sourceId) {
+  const key = name.trim().toLowerCase();
+  const item = fixItem(shopping[key] ??= { name, category, quantities: [], done: false });
+  if (item.sources.includes(sourceId)) return false;
+  item.quantities.push(quantity); // older plans have no "buy"
+  item.sources.push(sourceId);
+  item.labels.push(label);
+  item.recipes = [...new Set(item.labels.filter(Boolean))];
+  if (!item.package && pack) item.package = pack;
+  delete item.buyAmount; // the need changed, so the suggestion is worked out again
+  item.done = false;
+  return true;
+}
+
+// Takes a swapped-out meal's ingredients off the list (unless they're already bought).
+function removeFromList(meal) {
+  const ids = new Set([mealSource(meal), mealKey(meal)]); // older lists used "date|meal"
+  for (const [key, item] of Object.entries(shopping)) {
+    if (item.done) continue;
+    fixItem(item);
+    const keep = item.sources.map((s) => !ids.has(s));
+    if (keep.every(Boolean)) continue;
+    item.quantities = item.quantities.filter((_, i) => keep[i]);
+    item.sources = item.sources.filter((_, i) => keep[i]);
+    item.labels = item.labels.filter((_, i) => keep[i]);
+    item.recipes = [...new Set(item.labels.filter(Boolean))];
+    delete item.buyAmount;
+    if (!item.quantities.length) delete shopping[key];
+  }
+}
+
+// Claude checks the pantry meal by meal, so several meals can each "have" the same 500 g of rice.
+// Adds up what these meals use from each pantry item and puts any shortfall on the list.
+function addShortfalls(meals) {
+  if (!meals.length) return [];
+  const rows = pantry().map(splitPantryLine);
+  const totals = new Map();
+  for (const m of meals) {
+    for (const ing of m.ingredients) {
+      const i = findPantryIndex(rows, ing.name);
+      if (i < 0 || !rows[i].amount) continue;
+      const have = parseAmount(rows[i].amount);
+      const need = parseAmount(ing.quantity);
+      if (!have || !need || need.unit !== have.unit) continue;
+      const t = totals.get(i) ?? { have: have.n, unit: have.unit, need: 0, buying: 0, ing };
+      t.need += need.n;
+      if (!ing.have_it) {
+        const b = parseAmount(ing.buy || ing.quantity);
+        if (b && b.unit === have.unit) t.buying += b.n;
+      }
+      totals.set(i, t);
+    }
+  }
+  const source = `shortfall|${meals[0].date}|${meals[meals.length - 1].date}`;
+  const keys = [];
+  for (const t of totals.values()) {
+    const short = Math.round((t.need - t.have - t.buying) * 100) / 100;
+    if (short <= 0) continue;
+    const amount = addQuantities([`${short}${t.unit ? " " + t.unit : ""}`]);
+    if (addPart(t.ing.name, t.ing.category, t.ing.package, amount, "More than your pantry has", source)) {
+      keys.push(t.ing.name.trim().toLowerCase());
+    }
+  }
+  return keys;
+}
+
+// Adds plan meals to the list, plus whatever the pantry runs short of. Returns how many items changed.
+function addMealsToList(meals) {
+  const keys = new Set();
+  for (const m of meals) for (const k of addIngredients(m.ingredients, m.title, mealSource(m))) keys.add(k);
+  for (const k of addShortfalls(meals)) keys.add(k);
+  saveShopping();
+  return keys.size;
 }
 
 function saveShopping() {
@@ -617,23 +846,42 @@ function needed(item) {
   return addQuantities(item.quantities); // also turns cups and fractions into metric
 }
 
+// Garlic is bought by the head (about 10 cloves).
+const PER_PACK = { "clove>head": 10, "cloves>head": 10, "clove>heads": 10, "cloves>heads": 10 };
+// Recipes that count containers ("2 cans") need that many packs, whatever the pack weighs.
+const CONTAINERS = new Set(["can", "cans", "jar", "jars", "bottle", "bottles", "pack", "packs", "packet", "packets",
+  "bunch", "bunches", "head", "heads"]);
+
 // How much to buy: whole store packages that cover what's needed (180 ml of milk -> 1 l).
-// Falls back to the store size, or to what's needed when there's no store size.
+// When the amounts can't be compared, suggests what the recipes need, so nothing is under-bought.
 function suggestedBuy(item) {
-  const need = needed(item);
-  if (!item.package) return need;
-  const n = parseAmount(need);
-  const pack = parseAmount(item.package);
-  if (n && pack && n.unit === pack.unit && pack.n > 0) {
-    const packs = Math.max(1, Math.ceil(n.n / pack.n - 1e-9));
-    return addQuantities([`${packs * pack.n}${pack.unit ? " " + pack.unit : ""}`]);
+  const parts = item.quantities.flatMap(amountTerms).map(parseAmount);
+  const need = addQuantities(item.quantities.flatMap(amountTerms));
+  const pack = item.package ? parseAmount(item.package) : null;
+  if (!pack || pack.n <= 0) return need || needed(item);
+  if (!parts.length) return addQuantities([item.package]); // only "to taste": one pack
+  const units = new Set(parts.map((x) => x.unit));
+  if (units.size === 1) {
+    const [unit] = units;
+    const total = parts.reduce((sum, x) => sum + x.n, 0);
+    let packs = 0;
+    if (unit === pack.unit) packs = Math.ceil(total / pack.n - 1e-9);
+    else if (PER_PACK[`${unit}>${pack.unit}`]) packs = Math.ceil(total / (PER_PACK[`${unit}>${pack.unit}`] * pack.n) - 1e-9);
+    else if (CONTAINERS.has(unit)) packs = Math.ceil(total - 1e-9);
+    if (packs) {
+      const shown = item.package.trim().match(/^\S+\s*(.*)$/)[1]; // keep the store's unit word ("head")
+      const amount = packs * (MEASURES.has(pack.unit) && pack.unit !== "g" && pack.unit !== "ml" ? parseFloat(item.package) : pack.n);
+      return pack.unit === "g" || pack.unit === "ml"
+        ? addQuantities([`${packs * pack.n} ${pack.unit}`])
+        : `${Math.round(amount * 100) / 100}${shown ? " " + shown : ""}`;
+    }
   }
-  return item.package;
+  return need;
 }
 
-// The amount the user will buy: their own edit, or the suggestion.
+// The amount the user will buy: their own edit (even if they cleared it), or the suggestion.
 function buyAmount(item) {
-  return normalizeAmount(item.buyAmount || suggestedBuy(item));
+  return item.buyAmount != null ? normalizeAmount(item.buyAmount) : suggestedBuy(item);
 }
 
 // Number + unit box (same look as the pantry rows). Calls onChange("1.5 kg") as the user edits.
@@ -649,7 +897,9 @@ function amountBox(amount, name, onChange) {
   unit.value = start.unit;
   const changed = () => {
     const n = number.value.trim().replace(/,(?!\d)/g, "");
-    onChange(n ? `${n}${unit.value ? " " + unit.value : ""}` : "");
+    const valid = !n || /^\d+(?:[.,]\d+)?$/.test(n);
+    if (valid) number.removeAttribute("aria-invalid"); else number.setAttribute("aria-invalid", "true");
+    if (valid) onChange(n ? `${n}${unit.value ? " " + unit.value : ""}` : "");
   };
   number.addEventListener("input", changed);
   unit.addEventListener("change", changed);
@@ -683,12 +933,26 @@ function renderShopping() {
 
     box.append(el("h3", { class: "section-name", text: category }));
     box.append(el("ul", { class: "items" },
-      ...inCategory.map(([, item]) => {
-        const checkbox = el("input", { type: "checkbox" });
+      ...inCategory.map(([key, item]) => {
+        const checkbox = el("input", { type: "checkbox", "data-key": key });
         checkbox.checked = item.done;
         checkbox.addEventListener("change", () => {
           item.done = checkbox.checked;
           saveShopping();
+          // The list is drawn again; keep the keyboard on the same checkbox.
+          $("list-content").querySelector(`input[data-key="${CSS.escape(key)}"]`)?.focus();
+        });
+        const remove = el("button", {
+          class: "pi-btn pi-remove item-remove", type: "button", text: "✕", "aria-label": `Remove ${item.name}`,
+          onclick: () => {
+            const all = [...$("list-content").querySelectorAll(".item-remove")];
+            const at = all.findIndex((b) => b.getAttribute("aria-label") === `Remove ${item.name}`);
+            delete shopping[key];
+            saveShopping();
+            toast(`Removed ${item.name}`);
+            const left = [...$("list-content").querySelectorAll(".item-remove")];
+            (left[at] || left[at - 1] || $("tab-list")).focus();
+          },
         });
         const forText = item.recipes.length > 3
           ? `For ${item.recipes.slice(0, 3).join(", ")} and ${item.recipes.length - 3} more`
@@ -702,10 +966,10 @@ function renderShopping() {
             checkbox,
             el("span", {},
               el("span", { class: "label", text: item.name }),
-              el("span", { class: "for", text: `Recipes need ${needed(item)}. ${forText}` }),
+              el("span", { class: "for", text: `Recipes still need ${needed(item)}. ${forText}` }),
             ),
           ),
-          el("span", { class: "buy-box" }, el("span", { class: "buy-label", text: "Buy" }), buy),
+          el("span", { class: "buy-box" }, el("span", { class: "buy-label", text: "Buy" }), buy, remove),
         );
       }),
     ));
@@ -718,10 +982,11 @@ function renderShopping() {
       onclick: () => {
         const done = checked();
         if (!done.length) return toast("Tick the items you bought first");
-        addToPantry(done.map(([, v]) => ({ name: v.name, amount: buyAmount(v) })));
+        const unclear = addToPantry(done.map(([, v]) => ({ name: v.name, amount: buyAmount(v) })));
         for (const [key] of done) delete shopping[key];
         saveShopping();
-        toast(`Moved ${plural(done.length, "item", "items")} to your pantry`);
+        toast(`Moved ${plural(done.length, "item", "items")} to your pantry`
+          + (unclear.length ? `. Check the amount of ${unclear.join(", ")} there, it couldn't be added up` : ""));
       },
     }),
     el("button", {
@@ -750,7 +1015,8 @@ function renderShopping() {
 function downloadList() {
   const lines = [];
   for (const category of CATEGORY_ORDER) {
-    const items = Object.values(shopping).filter((v) => v.category === category && !v.done);
+    const items = Object.values(shopping)
+      .filter((v) => (CATEGORY_ORDER.includes(v.category) ? v.category : "Other") === category && !v.done);
     if (!items.length) continue;
     lines.push(category.toUpperCase());
     for (const v of items) lines.push(`[ ] ${v.name} - ${buyAmount(v)} (recipes need ${needed(v)})`);
@@ -759,7 +1025,7 @@ function downloadList() {
   const blob = new Blob([lines.join("\n")], { type: "text/plain" });
   const link = el("a", { href: URL.createObjectURL(blob), download: "shopping-list.txt" });
   link.click();
-  URL.revokeObjectURL(link.href);
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000); // give the download time to start
 }
 
 // ---------- Plan settings form ----------
@@ -889,24 +1155,49 @@ function saveSettings() {
 }
 
 // Every meal to plan, in date order.
-function buildSlots(start = settings.start, length = settings.length) {
+function buildSlots(start = settings.start, length = settings.length, cfg = settings) {
   const slots = [];
   for (let d = 0; d < length; d++) {
     const date = addDays(start, d);
     const wd = weekdayIndex(date);
     const weekend = wd >= 5;
     for (const meal of MEALS) {
-      if (!settings.meals[meal][wd]) continue;
-      slots.push({
-        date,
-        weekday: WEEKDAYS[wd],
-        meal,
-        max_minutes: weekend ? settings.weekendMinutes : settings.weekdayMinutes,
-        relaxed: weekend && settings.relaxed,
-      });
+      if (!cfg.meals[meal][wd]) continue;
+      slots.push(slotFor(date, meal, cfg));
     }
   }
   return slots;
+}
+
+function slotFor(date, meal, cfg) {
+  const wd = weekdayIndex(date);
+  const weekend = wd >= 5;
+  return {
+    date, weekday: WEEKDAYS[wd], meal,
+    max_minutes: weekend ? cfg.weekendMinutes : cfg.weekdayMinutes,
+    relaxed: weekend && cfg.relaxed,
+  };
+}
+
+// Asks Claude to plan these slots with the plan's settings.
+function requestMeals(slots, extra = {}) {
+  const cfg = planSettings();
+  return post("/api/plan", {
+    ...kitchen(cfg.people),
+    slots,
+    diet: cfg.diet === "other" ? cfg.dietOther : cfg.diet,
+    requirements: cfg.requirements,
+    leftovers: cfg.leftovers,
+    repeats: cfg.repeats,
+    avoid: plan.weeks.flatMap((w) => w.meals.map((m) => m.title)).slice(-150),
+    ...extra,
+  });
+}
+
+// Slots Claude didn't fill.
+function unfilled(slots, meals) {
+  const got = new Set(meals.map(mealKey));
+  return slots.filter((x) => !got.has(mealKey(x)));
 }
 
 // ---------- Making the plan ----------
@@ -922,6 +1213,7 @@ function startNewPlan() {
     length: settings.length,
     servings: settings.people.length,
     people: settings.people.map((p) => p.name.trim()).filter(Boolean),
+    settings: JSON.parse(JSON.stringify(settings)), // later edits to the form don't change this plan
     weeks,
   };
   planRecipes = {};
@@ -941,30 +1233,34 @@ async function fillPlan() {
   button.disabled = true;
   renderPlan();
   try {
+    const current = plan;
     for (const [n, week] of plan.weeks.entries()) {
       if (week.done) continue;
       const days = Math.round((parseDate(week.end) - parseDate(week.start)) / 86400000) + 1;
-      const slots = buildSlots(week.start, days);
+      const slots = buildSlots(week.start, days, planSettings());
       if (slots.length) {
         showMessage("plan-message", `Planning week ${n + 1} of ${plan.weeks.length}...`);
-        const avoid = plan.weeks.flatMap((w) => w.meals.map((m) => m.title)).slice(-150);
-        const { meals } = await post("/api/plan", {
-          ...kitchen(),
-          slots,
-          diet: settings.diet === "other" ? settings.dietOther : settings.diet,
-          requirements: settings.requirements,
-          leftovers: settings.leftovers,
-          repeats: settings.repeats,
-          avoid,
-        });
+        let { meals } = await requestMeals(slots);
+        if (plan !== current) return; // the plan was deleted or replaced meanwhile
+        // Claude sometimes leaves a meal out: ask once more for just those.
+        let missing = unfilled(slots, meals);
+        if (missing.length) {
+          week.meals = meals;
+          const again = await requestMeals(missing);
+          if (plan !== current) return;
+          meals = [...meals, ...again.meals.filter((m) => missing.some((x) => mealKey(x) === mealKey(m)))];
+          missing = unfilled(slots, meals);
+        }
         week.meals = meals;
+        week.missing = missing;
       }
       week.done = true;
       savePlan();
       renderPlan();
     }
+    const left = plan.weeks.reduce((sum, w) => sum + (w.missing?.length || 0), 0);
     showMessage("plan-message", "");
-    toast("Your meal plan is ready");
+    toast(left ? `Your plan is ready, but ${plural(left, "meal", "meals")} couldn't be planned` : "Your meal plan is ready");
   } catch (err) {
     planError = err.message;
     showMessage("plan-message", err.message, true);
@@ -979,15 +1275,35 @@ function savePlan() {
   store.save("plan", plan);
 }
 
+// How many different ingredients this week needs to buy.
 function weekMissing(week) {
-  return week.meals.reduce((n, m) => n + m.ingredients.filter((i) => !i.have_it).length, 0);
+  return new Set(week.meals.flatMap((m) => m.ingredients.filter((i) => !i.have_it).map((i) => i.name.trim().toLowerCase()))).size;
+}
+
+// Plans the meals Claude left out of a week.
+async function planMissing(week) {
+  if (planning || !week.missing?.length) return;
+  planning = true;
+  const current = plan;
+  renderPlan();
+  try {
+    const { meals } = await requestMeals(week.missing);
+    if (plan !== current) return;
+    const wanted = new Set(week.missing.map(mealKey));
+    week.meals = [...week.meals, ...meals.filter((m) => wanted.has(mealKey(m)))];
+    week.missing = unfilled(week.missing, meals);
+    savePlan();
+    toast(week.missing.length ? `${plural(week.missing.length, "meal", "meals")} still couldn't be planned` : "The missing meals are planned");
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    planning = false;
+    renderPlan();
+  }
 }
 
 function addWeekToList(week, n) {
-  let added = 0;
-  for (const meal of week.meals) {
-    added += addIngredients(meal.ingredients, meal.title, `${meal.date}|${meal.meal}`);
-  }
+  const added = addMealsToList(week.meals);
   toast(added
     ? `Added ${plural(added, "item", "items")} for week ${n + 1} to your shopping list`
     : `Week ${n + 1} is already on your shopping list`);
@@ -1013,8 +1329,7 @@ function renderPlan() {
         ? el("button", {
             class: "btn primary", type: "button", text: "Add whole plan to shopping list",
             onclick: () => {
-              let added = 0;
-              for (const w of plan.weeks) for (const m of w.meals) added += addIngredients(m.ingredients, m.title, `${m.date}|${m.meal}`);
+              const added = addMealsToList(plan.weeks.flatMap((w) => w.meals));
               toast(added ? `Added ${plural(added, "item", "items")} to your shopping list` : "The whole plan is already on your list");
             },
           })
@@ -1040,9 +1355,7 @@ function renderPlan() {
       week.done && week.meals.length
         ? el("div", { class: "week-tools" },
             el("span", { text: `${plural(week.meals.length, "meal", "meals")}, ${plural(missing, "ingredient", "ingredients")} to buy` }),
-            missing
-              ? el("button", { class: "btn small", type: "button", text: "Add to shopping list", onclick: () => addWeekToList(week, n) })
-              : null,
+            el("button", { class: "btn small", type: "button", text: "Add to shopping list", onclick: () => addWeekToList(week, n) }),
           )
         : null,
     );
@@ -1059,6 +1372,16 @@ function renderPlan() {
         ));
     }
 
+    const missingNote = week.missing?.length
+      ? el("div", { class: "week-missing" },
+          el("p", { text: `${plural(week.missing.length, "meal", "meals")} couldn't be planned this week.` }),
+          el("button", {
+            class: "btn small", type: "button", disabled: planning,
+            text: `Plan the ${plural(week.missing.length, "missing meal", "missing meals")}`,
+            onclick: () => planMissing(week),
+          }))
+      : null;
+
     // Each meal type keeps its own column, so dinners line up even on days without lunch.
     const types = MEALS.filter((name) => plan.weeks.some((w) => w.meals.some((m) => m.meal === name)));
     const days = [];
@@ -1071,7 +1394,7 @@ function renderPlan() {
         el("div", { class: "day-date" },
           el("span", { class: "dow", text: WEEKDAYS[wd].slice(0, 3) }),
           el("span", { class: "num", text: String(parseDate(date).getDate()) }),
-          wd >= 5 && settings.relaxed ? el("span", { class: "tag", text: "Relaxed" }) : null,
+          wd >= 5 && planSettings().relaxed ? el("span", { class: "tag", text: "Relaxed" }) : null,
         ),
         meals.length
           ? el("div", { class: "day-meals", style: `--cols: ${types.length}` },
@@ -1079,7 +1402,7 @@ function renderPlan() {
           : el("p", { class: "day-empty", text: "Nothing planned" }),
       ));
     }
-    return el("section", { class: "week" }, weekHead, ...days);
+    return el("section", { class: "week" }, weekHead, missingNote, ...days);
   });
 
   box.replaceChildren(head, ...weeks);
@@ -1103,7 +1426,9 @@ function swapIcon() {
 // or a button that swaps the meal for another suggestion straight away.
 function mealCard(meal) {
   const toBuy = meal.ingredients.filter((i) => !i.have_it).length;
-  const cooked = planRecipes[`${meal.date}|${meal.meal}`]?.cooked;
+  const key = mealKey(meal);
+  const cooked = planRecipes[key]?.cooked;
+  const busy = swapping.has(key);
   const card = el("button", {
     type: "button",
     class: "meal-card",
@@ -1111,7 +1436,7 @@ function mealCard(meal) {
     onclick: () => openMeal(meal),
   },
     el("span", { class: "which", text: meal.meal }),
-    el("span", { class: "title", text: meal.title }),
+    el("span", { class: "title", text: busy ? "Finding another meal..." : meal.title }),
     el("span", { class: "facts" },
       `${meal.total_time_minutes} min`,
       toBuy ? ", " : ", nothing to buy",
@@ -1119,7 +1444,7 @@ function mealCard(meal) {
     ),
   );
 
-  const slot = el("div", { class: "meal-slot" + (cooked ? " is-cooked" : "") }, card);
+  const slot = el("div", { class: "meal-slot" + (cooked ? " is-cooked" : "") + (busy ? " is-swapping" : ""), "data-key": key }, card);
   if (cooked) {
     slot.append(el("span", { class: "corner cooked-mark", "aria-hidden": "true", text: "✓ Cooked" }));
   } else {
@@ -1127,21 +1452,18 @@ function mealCard(meal) {
       type: "button",
       class: "corner swap-btn",
       title: "Swap for another meal",
-      "aria-label": `Swap ${meal.title} for another ${meal.meal.toLowerCase()}`,
-      disabled: planning,
+      "aria-label": busy ? `Finding another ${meal.meal.toLowerCase()}` : `Swap ${meal.title} for another ${meal.meal.toLowerCase()}`,
+      disabled: planning || busy,
     }, swapIcon());
     swap.addEventListener("click", async () => {
-      slot.classList.add("is-swapping");
-      swap.disabled = true;
-      card.querySelector(".title").textContent = "Finding another meal...";
       try {
         await replaceMeal(meal, "");
       } catch (err) {
-        slot.classList.remove("is-swapping");
-        swap.disabled = false;
-        card.querySelector(".title").textContent = meal.title;
         toast(err.message);
       }
+      // The plan was drawn again: put the keyboard back on this meal.
+      const again = document.querySelector(`.meal-slot[data-key="${CSS.escape(key)}"]`);
+      (again?.querySelector(".swap-btn:not(:disabled)") || again?.querySelector(".meal-card"))?.focus();
     });
     slot.append(swap);
   }
@@ -1159,7 +1481,7 @@ async function openMeal(meal) {
   dialog.meal = meal;
   $("swap-panel").hidden = true;
   $("swap-reason").value = "";
-  $("swap-toggle").hidden = !findMeal(meal);
+  $("swap-toggle").hidden = !findMeal(meal) || Boolean(planRecipes[key]?.cooked);
   $("swap-toggle").setAttribute("aria-expanded", "false");
   $("swap-message").textContent = "";
 
@@ -1176,7 +1498,10 @@ async function openMeal(meal) {
   if (!dialog.open) dialog.showModal();
 
   try {
-    const recipe = await post("/api/plan/recipe", { ...kitchen(), meal });
+    const recipe = await post("/api/plan/recipe", { ...kitchen(planSettings().people), meal });
+    // The meal may have been swapped (or the plan replaced) while the recipe was being written.
+    const spot = findMeal(meal);
+    if (!spot || spot.week.meals[spot.index] !== meal) return;
     planRecipes[key] = recipe;
     store.save("planRecipes", planRecipes);
     if (dialog.open && dialog.dataset.key === key) {
@@ -1208,11 +1533,17 @@ function setupDialog() {
   });
 }
 
-// Marks a plan meal as cooked (its full recipe is stored in planRecipes).
-function setCooked(key, done) {
+// Marks a plan meal as cooked (its full recipe is stored in planRecipes), with what to undo.
+function setCooked(key, done, changes = []) {
   if (!planRecipes[key]) return;
   planRecipes[key].cooked = done;
+  planRecipes[key].cookedChanges = changes;
   store.save("planRecipes", planRecipes);
+  const dialog = $("meal-dialog");
+  if (dialog.open && dialog.dataset.key === key) {
+    $("swap-toggle").hidden = done; // a cooked meal isn't swapped
+    if (done) $("swap-panel").hidden = true;
+  }
   if (plan) renderPlan();
 }
 
@@ -1226,41 +1557,51 @@ function findMeal(meal) {
   return null;
 }
 
-// Ask Claude for a different dish for one slot of the plan.
 // Asks Claude for a different dish for one slot of the plan and puts it in the plan.
+// With "cook once, eat twice", swapping a dinner also re-plans the next day's leftovers lunch.
 // Throws an Error with a message for the user if it can't.
 async function replaceMeal(meal, reason) {
-  const spot = findMeal(meal);
-  if (!spot) throw new Error("This meal is no longer in your plan.");
+  const key = mealKey(meal);
+  if (!findMeal(meal)) throw new Error("This meal is no longer in your plan.");
   if (planning) throw new Error("Wait until the plan is finished, then try again.");
-  const wd = weekdayIndex(meal.date);
-  const weekend = wd >= 5;
-  const { meals } = await post("/api/plan", {
-    ...kitchen(),
-    slots: [{
-      date: meal.date,
-      weekday: WEEKDAYS[wd],
-      meal: meal.meal,
-      max_minutes: weekend ? settings.weekendMinutes : settings.weekdayMinutes,
-      relaxed: weekend && settings.relaxed,
-    }],
-    diet: settings.diet === "other" ? settings.dietOther : settings.diet,
-    requirements: settings.requirements,
-    leftovers: false,
-    repeats: settings.repeats,
-    avoid: plan.weeks.flatMap((w) => w.meals.map((m) => m.title)).slice(-150),
-    replace: meal.title,
-    replace_reason: reason,
-  });
-  if (!meals.length) throw new Error("No new meal came back. Please try again.");
-  const fresh = meals[0];
-  spot.week.meals[spot.index] = fresh;
-  delete planRecipes[`${meal.date}|${meal.meal}`];
-  store.save("planRecipes", planRecipes);
-  savePlan();
+  if (swapping.has(key)) throw new Error("Already finding another meal for this one.");
+  const cfg = planSettings();
+  const lunch = cfg.leftovers && meal.meal === "Dinner"
+    ? plan.weeks.flatMap((w) => w.meals).find((m) => m.date === addDays(meal.date, 1) && m.meal === "Lunch"
+        && !planRecipes[mealKey(m)]?.cooked)
+    : null;
+  const olds = lunch ? [meal, lunch] : [meal];
+  const current = plan;
+  olds.forEach((m) => swapping.add(mealKey(m)));
   renderPlan();
-  toast(`Swapped for ${fresh.title}`);
-  return fresh;
+  try {
+    const { meals } = await requestMeals(olds.map((m) => slotFor(m.date, m.meal, cfg)), {
+      leftovers: Boolean(lunch),
+      replace: olds.map((m) => m.title).join('" and "'),
+      replace_reason: reason,
+    });
+    // The plan may have changed while waiting: deleted, replaced, or this meal swapped or cooked.
+    const spots = olds.map(findMeal);
+    if (plan !== current || spots.some((spot, i) => !spot || spot.week.meals[spot.index] !== olds[i])) {
+      throw new Error("Your plan changed while finding a new meal, so nothing was swapped.");
+    }
+    const fresh = olds.map((m) => meals.find((x) => mealKey(x) === mealKey(m)));
+    if (!fresh[0]) throw new Error("No new meal came back. Please try again.");
+    olds.forEach((old, i) => {
+      if (!fresh[i]) return;
+      spots[i].week.meals[spots[i].index] = fresh[i];
+      delete planRecipes[mealKey(old)];
+      removeFromList(old);
+    });
+    store.save("planRecipes", planRecipes);
+    saveShopping();
+    savePlan();
+    toast(fresh[1] ? `Swapped for ${fresh[0].title}, and the next day's lunch too` : `Swapped for ${fresh[0].title}`);
+    return fresh[0];
+  } finally {
+    olds.forEach((m) => swapping.delete(mealKey(m)));
+    if (plan) renderPlan();
+  }
 }
 
 // The swap form inside the meal dialog.

@@ -2,6 +2,8 @@
 
 from typing import List, Literal
 
+import os
+
 import anthropic
 from pydantic import BaseModel, ValidationError
 
@@ -95,6 +97,8 @@ def _pantry_text(pantry: List[str], has_basics: bool) -> str:
 
 
 def _ask(prompt: str, output_type: type[BaseModel], effort: str = "medium") -> BaseModel:
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise CookingError("No API key found. Add ANTHROPIC_API_KEY to the .env file and restart the server.")
     try:
         response = _client().messages.parse(
             model=MODEL,
@@ -112,9 +116,11 @@ def _ask(prompt: str, output_type: type[BaseModel], effort: str = "medium") -> B
     except anthropic.RateLimitError:
         raise CookingError("Too many requests right now. Wait a minute and try again.")
     except anthropic.APIStatusError as e:
-        raise CookingError(f"Claude returned an error ({e.status_code}): {e.message}")
+        raise CookingError(f"Claude returned an error ({e.status_code}). Please try again in a moment.")
     except anthropic.APIConnectionError:
         raise CookingError("Couldn't reach Claude. Check your internet connection.")
+    except anthropic.AnthropicError:
+        raise CookingError("Something went wrong talking to Claude. Please try again.")
 
     if response.stop_reason == "refusal":
         raise CookingError("Claude declined this request. Try rewording it.")
@@ -184,7 +190,10 @@ def plan_meals(
         avoid_text = "These dishes are already in the plan, so don't repeat them: " + "; ".join(avoid) if avoid else ""
     if pantry:
         pantry_rule = """- Build the plan around the pantry. Most meals should be made mainly from what the user
-  already has, adding only a few new ingredients. Plan the shopping as a short list of fresh
+  already has, adding only a few new ingredients.
+- Pantry amounts are shared by all the meals below, so budget them across the plan: if the pantry
+  has "rice 500 g" and several meals use 200 g each, the first two are covered and from the third
+  on set have_it false with buy = the shortfall (e.g. "100 g", then "200 g"). Plan the shopping as a short list of fresh
   items reused across several meals, not a different set of ingredients for every meal.
 - Once or twice a week, it's fine to try something new that needs more shopping."""
     else:
