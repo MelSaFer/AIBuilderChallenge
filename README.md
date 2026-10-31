@@ -4,10 +4,10 @@
 
 ## Cooking Helper
 
-A web app that uses Claude to help you cook:
+A web app that uses Claude to help you cook. The page is plain HTML, CSS and JavaScript; a small Python server talks to Claude so your API key stays private.
 
 - **Create a recipe**: describe what you want to eat and get a full recipe.
-- **Shopping list**: add a recipe's missing ingredients to a list grouped by supermarket section. Check items off or download the list.
+- **Shopping list**: add a recipe's missing ingredients to a list grouped by supermarket section. Check items off or download the list. Your pantry and list are saved in your browser.
 - **What can I cook?**: enter the ingredients you already have and get recipe ideas that use them.
 
 ## Setup (one time)
@@ -30,7 +30,13 @@ ANTHROPIC_API_KEY=your-key-here
 
 ```powershell
 .venv\Scripts\Activate.ps1
-streamlit run app.py
+python server.py
 ```
 
-The app opens in your browser.
+Then open http://localhost:8000 in your browser. To stop the app, press `Ctrl + C` in PowerShell.
+
+## Project files
+
+- `server.py`: the Python server. Serves the page and sends requests to Claude.
+- `cooking.py`: the prompts and the recipe format Claude answers with.
+- `static/`: the web page (`index.html`, `style.css`, `app.js`).

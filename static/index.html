@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cooking Helper</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&display=swap">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="pantry" aria-labelledby="pantry-title">
+    <h2 id="pantry-title">My pantry</h2>
+    <label for="pantry-input">What ingredients do you have?</label>
+    <textarea id="pantry-input" rows="9" placeholder="eggs&#10;rice&#10;chicken breast&#10;tomatoes, onion, garlic"></textarea>
+    <p class="hint">One per line or separated by commas. Recipes mark these as "you have it".</p>
+    <label class="check">
+      <input type="checkbox" id="basics" checked>
+      <span>I have basics (salt, pepper, oil, water)</span>
+    </label>
+    <p class="hint" id="pantry-count" aria-live="polite">0 ingredients in your pantry</p>
+  </aside>
+
+  <main>
+    <header class="page-header">
+      <h1>Cooking Helper</h1>
+      <p>Say what you feel like eating, or what's already in your kitchen. You get a recipe and a shopping list for whatever's missing.</p>
+    </header>
+
+    <div class="alert" id="key-alert" role="alert" hidden>
+      No API key found. Create a file named <code>.env</code> in the project folder with the line
+      <code>ANTHROPIC_API_KEY=your-key-here</code>, then restart the server.
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-create" aria-controls="panel-create" aria-selected="true">Create a recipe</button>
+      <button role="tab" id="tab-suggest" aria-controls="panel-suggest" aria-selected="false" tabindex="-1">What can I cook?</button>
+      <button role="tab" id="tab-list" aria-controls="panel-list" aria-selected="false" tabindex="-1">Shopping list<span id="list-badge"></span></button>
+    </div>
+
+    <!-- Create a recipe -->
+    <section role="tabpanel" id="panel-create" aria-labelledby="tab-create">
+      <form id="create-form" class="form">
+        <div class="field">
+          <label for="request">What do you want to cook?</label>
+          <input id="request" type="text" maxlength="500" placeholder="A quick creamy pasta for a weeknight" autocomplete="off">
+        </div>
+        <div class="row">
+          <div class="field field-small">
+            <label for="servings">Servings</label>
+            <input id="servings" type="number" min="1" max="20" value="2">
+          </div>
+          <div class="field">
+            <label for="diet">Dietary needs (optional)</label>
+            <input id="diet" type="text" maxlength="200" placeholder="vegetarian, no nuts..." autocomplete="off">
+          </div>
+        </div>
+        <button type="submit" class="btn primary" data-busy-label="Writing your recipe...">Create recipe</button>
+      </form>
+      <p class="message" id="create-message" role="status"></p>
+      <div id="create-result"></div>
+    </section>
+
+    <!-- What can I cook? -->
+    <section role="tabpanel" id="panel-suggest" aria-labelledby="tab-suggest" hidden>
+      <p class="intro">Get three recipe ideas that use what's in <strong>My pantry</strong>, starting with the one that needs the fewest extra ingredients.</p>
+      <form id="suggest-form" class="form">
+        <div class="field">
+          <label for="notes">Anything else? (optional)</label>
+          <input id="notes" type="text" maxlength="300" placeholder="something healthy, under 30 minutes..." autocomplete="off">
+        </div>
+        <button type="submit" class="btn primary" data-busy-label="Looking through your pantry...">Suggest recipes</button>
+      </form>
+      <p class="message" id="suggest-message" role="status"></p>
+      <div id="suggest-result"></div>
+    </section>
+
+    <!-- Shopping list -->
+    <section role="tabpanel" id="panel-list" aria-labelledby="tab-list" hidden>
+      <div id="list-content"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
