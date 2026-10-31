@@ -3,31 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cooking Helper</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <title>Mise</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='4' y='26' width='92' height='48' fill='%23EEDFA8' transform='rotate(-6 50 50)'/><text x='50' y='66' text-anchor='middle' font-family='Arial Narrow,Arial,sans-serif' font-weight='900' font-size='44' fill='%231C2631' transform='rotate(-6 50 50)'>Mi</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <aside class="pantry" aria-labelledby="pantry-title">
-    <h2 id="pantry-title">My pantry</h2>
-    <label for="pantry-input">What ingredients do you have?</label>
-    <textarea id="pantry-input" rows="9" placeholder="eggs&#10;rice&#10;chicken breast&#10;tomatoes, onion, garlic"></textarea>
-    <p class="hint">One per line or separated by commas. Recipes mark these as "you have it".</p>
-    <label class="check">
-      <input type="checkbox" id="basics" checked>
-      <span>I have basics (salt, pepper, oil, water)</span>
-    </label>
-    <p class="hint" id="pantry-count" aria-live="polite">0 ingredients in your pantry</p>
-  </aside>
-
   <main>
     <header class="page-header">
-      <h1>Cooking Helper</h1>
-      <p>Say what you feel like eating, or what's already in your kitchen. You get a recipe and a shopping list for whatever's missing.</p>
+      <h1 class="wordmark">Mise</h1>
+      <p>Plan the week for everyone at your table, cook with what's already in your pantry, and shop once for the rest.</p>
     </header>
 
     <div class="alert" id="key-alert" role="alert" hidden>
@@ -36,13 +24,115 @@
     </div>
 
     <div class="tabs" role="tablist" aria-label="Sections">
-      <button role="tab" id="tab-create" aria-controls="panel-create" aria-selected="true">Create a recipe</button>
+      <button role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="true">Meal plan</button>
+      <button role="tab" id="tab-create" aria-controls="panel-create" aria-selected="false" tabindex="-1">Create a recipe</button>
       <button role="tab" id="tab-suggest" aria-controls="panel-suggest" aria-selected="false" tabindex="-1">What can I cook?</button>
       <button role="tab" id="tab-list" aria-controls="panel-list" aria-selected="false" tabindex="-1">Shopping list<span id="list-badge"></span></button>
     </div>
 
+    <!-- Meal plan -->
+    <section role="tabpanel" id="panel-plan" aria-labelledby="tab-plan">
+      <details class="settings" id="settings">
+        <summary>Plan settings</summary>
+        <form id="plan-form" class="settings-body">
+
+          <fieldset>
+            <legend>Who's eating</legend>
+            <p class="help">Everyone eats the same meals. Each person's restrictions apply to the whole plan.</p>
+            <div id="people"></div>
+            <button type="button" class="btn" id="add-person">Add a person</button>
+          </fieldset>
+
+          <fieldset>
+            <legend>How long</legend>
+            <div class="row">
+              <div class="field">
+                <span class="field-label" id="length-label">Plan length</span>
+                <div class="segmented" role="radiogroup" aria-labelledby="length-label">
+                  <label><input type="radio" name="length" value="7"><span>1 week</span></label>
+                  <label><input type="radio" name="length" value="14"><span>2 weeks</span></label>
+                  <label><input type="radio" name="length" value="30"><span>1 month</span></label>
+                </div>
+              </div>
+              <div class="field">
+                <label for="start">Starts on</label>
+                <input type="date" id="start">
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Which meals</legend>
+            <p class="help">Untick any meal you don't make, like weekday lunches you eat out.</p>
+            <div class="grid-wrap">
+              <table class="meal-grid" id="meal-grid"></table>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Time and diet</legend>
+            <div class="row">
+              <div class="field">
+                <label for="weekday-minutes">Cooking time on weekdays</label>
+                <select id="weekday-minutes"></select>
+              </div>
+              <div class="field">
+                <label for="weekend-minutes">Cooking time on weekends</label>
+                <select id="weekend-minutes"></select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="diet-select">Diet to follow</label>
+              <select id="diet-select">
+                <option value="">No specific diet, just balanced</option>
+                <option>Mediterranean</option>
+                <option>High protein</option>
+                <option>Low carb</option>
+                <option>Keto</option>
+                <option>Low calorie</option>
+                <option>Heart healthy (low salt, low saturated fat)</option>
+                <option>Vegetarian</option>
+                <option>Vegan</option>
+                <option>Pescatarian</option>
+                <option value="other">Something else…</option>
+              </select>
+              <input type="text" id="diet-other" maxlength="200" placeholder="Describe the diet" hidden>
+            </div>
+            <label class="check">
+              <input type="checkbox" id="relaxed">
+              <span>Relaxed weekends: comfort food and treats are fine on Saturday and Sunday</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="leftovers">
+              <span>Cook once, eat twice: use dinner leftovers for the next day's lunch</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="repeats">
+              <span>Repeat favorites: the same breakfast or lunch can come back on other days</span>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Anything else</legend>
+            <div class="field">
+              <label for="requirements">Specific requirements (optional)</label>
+              <textarea id="requirements" rows="3" maxlength="600" placeholder="Kid-friendly dinners, packable lunches, budget-friendly, more fish, Mexican food on Fridays..."></textarea>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button type="submit" class="btn primary" id="plan-button">Create meal plan</button>
+            <span class="help" id="plan-summary"></span>
+          </div>
+        </form>
+      </details>
+
+      <p class="message" id="plan-message" role="status"></p>
+      <div id="plan-result"></div>
+    </section>
+
     <!-- Create a recipe -->
-    <section role="tabpanel" id="panel-create" aria-labelledby="tab-create">
+    <section role="tabpanel" id="panel-create" aria-labelledby="tab-create" hidden>
       <form id="create-form" class="form">
         <div class="field">
           <label for="request">What do you want to cook?</label>
@@ -58,6 +148,7 @@
             <input id="diet" type="text" maxlength="200" placeholder="vegetarian, no nuts..." autocomplete="off">
           </div>
         </div>
+        <p class="help household-note" hidden>Your household's restrictions from Plan settings are included.</p>
         <button type="submit" class="btn primary" data-busy-label="Writing your recipe...">Create recipe</button>
       </form>
       <p class="message" id="create-message" role="status"></p>
@@ -72,6 +163,7 @@
           <label for="notes">Anything else? (optional)</label>
           <input id="notes" type="text" maxlength="300" placeholder="something healthy, under 30 minutes..." autocomplete="off">
         </div>
+        <p class="help household-note" hidden>Your household's restrictions from Plan settings are included.</p>
         <button type="submit" class="btn primary" data-busy-label="Looking through your pantry...">Suggest recipes</button>
       </form>
       <p class="message" id="suggest-message" role="status"></p>
@@ -83,6 +175,59 @@
       <div id="list-content"></div>
     </section>
   </main>
+
+  <aside class="pantry" id="pantry" aria-labelledby="pantry-title">
+    <div class="pantry-head">
+      <h2 id="pantry-title" class="tape">My pantry</h2>
+      <button type="button" class="btn small pantry-toggle" id="pantry-toggle" aria-expanded="true" aria-controls="pantry-body">Hide</button>
+    </div>
+    <p class="hint pantry-count" id="pantry-count" aria-live="polite">0 ingredients in your pantry</p>
+
+    <div class="pantry-body" id="pantry-body">
+      <form class="pantry-add" id="pantry-add-form">
+        <label for="pantry-add">Add what you have</label>
+        <div class="pantry-add-row">
+          <input id="pantry-add" type="text" maxlength="300" placeholder="rice 1 kg" autocomplete="off" aria-describedby="pantry-add-help">
+          <button type="submit" class="btn primary">Add</button>
+        </div>
+        <p class="hint" id="pantry-add-help">The amount is optional. Add several at once with commas.</p>
+      </form>
+
+      <ul class="pantry-list" id="pantry-list" aria-label="Ingredients in your pantry"></ul>
+      <p class="pantry-empty" id="pantry-empty">Your pantry is empty. Add what's in your kitchen and plans will use it first.</p>
+
+      <div class="pantry-text" id="pantry-text" hidden>
+        <label for="pantry-input">Your pantry as text</label>
+        <textarea id="pantry-input" rows="10" placeholder="eggs 12&#10;rice 1 kg&#10;chicken breast 500 g&#10;tomatoes, onion, garlic"></textarea>
+        <p class="hint">One per line or separated by commas. Good for pasting a long list.</p>
+      </div>
+      <button type="button" class="link-btn" id="pantry-text-toggle" aria-expanded="false" aria-controls="pantry-text">Edit as text</button>
+
+      <label class="check">
+        <input type="checkbox" id="basics" checked>
+        <span>I have basics (salt, pepper, oil, water)</span>
+      </label>
+    </div>
+  </aside>
+
+  <dialog id="meal-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-bar">
+      <p class="dialog-when" id="dialog-title"></p>
+      <div class="dialog-tools">
+        <button type="button" class="btn" id="swap-toggle" aria-expanded="false" aria-controls="swap-panel">Swap this meal</button>
+        <button type="button" class="btn" id="dialog-close">Close</button>
+      </div>
+    </div>
+    <form class="swap-panel" id="swap-panel" hidden>
+      <div class="field">
+        <label for="swap-reason">What would you rather have? (optional)</label>
+        <input id="swap-reason" type="text" maxlength="300" placeholder="Not a fan of fish, something lighter, use the leftover rice..." autocomplete="off">
+      </div>
+      <button type="submit" class="btn primary" id="swap-submit">Suggest another meal</button>
+      <p class="message" id="swap-message" role="status"></p>
+    </form>
+    <div id="dialog-body"></div>
+  </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
