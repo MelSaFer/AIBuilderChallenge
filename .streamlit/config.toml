@@ -1,0 +1,16 @@
+[theme]
+base = "light"
+primaryColor = "#2F6B4F"
+backgroundColor = "#EEF2E6"
+secondaryBackgroundColor = "#E1E8D7"
+textColor = "#1E3328"
+borderColor = "#C9D4BE"
+baseRadius = "10px"
+font = "Atkinson Hyperlegible:https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap"
+headingFont = "Bricolage Grotesque:https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&display=swap"
+
+[theme.sidebar]
+backgroundColor = "#1E3328"
+secondaryBackgroundColor = "#2A4436"
+textColor = "#EEF2E6"
+borderColor = "#3B5747"
