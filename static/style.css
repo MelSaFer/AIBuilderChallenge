@@ -9,8 +9,8 @@
   --muted: #55626C;
   --marker: #1F5FA8;
   --marker-dark: #184C88;
-  --tape: #EEDFA8;
-  --tape-edge: #E2CF8C;
+  --tape: #F5D466;
+  --tape-edge: #E9C24A;
   --tomato: #D2462C;
   --tomato-tint: #F7D6CC;
   --danger: #A8321D;
@@ -46,7 +46,7 @@ h1, h2, h3 { font-family: var(--display); margin: 0; }
 .tape, .wordmark, .day-date {
   display: inline-block;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 40%),
     var(--tape);
   color: var(--ink);
   /* Torn ends on the left and right */
@@ -277,7 +277,6 @@ fieldset > .field + .field, fieldset > .row + .field { margin-top: 1rem; }
   max-width: 44rem;
 }
 .cooked-note p { margin: 0; flex: 1 1 20rem; }
-.meal-card .cooked-tag { color: var(--marker); margin-left: 0.5rem; }
 .all-set { margin: 1.75rem 0 0; font-weight: 700; color: var(--marker); }
 
 /* Suggestions */
@@ -522,6 +521,8 @@ fieldset .check { margin-top: 0.75rem; }
 .day-empty { color: var(--muted); align-self: center; margin: 0; }
 
 .meal-card {
+  width: 100%;
+  height: 100%;
   text-align: left;
   font: inherit;
   color: var(--ink);
@@ -788,7 +789,7 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 
 @media (max-width: 1180px) and (min-width: 761px) {
   .day-meals { grid-template-columns: repeat(min(var(--cols, 3), 2), minmax(0, 1fr)); }
-  .day-meals .meal-card { grid-column: auto !important; }
+  .day-meals > * { grid-column: auto !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -821,7 +822,7 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
   .day-date .num { font-size: 1.4rem; }
   .day-date .tag { margin: 0; }
   .day-meals { grid-template-columns: 1fr; }
-  .day-meals .meal-card { grid-column: auto !important; }
+  .day-meals > * { grid-column: auto !important; }
   .settings-body { padding: 0 1rem 1.25rem; }
   .settings > summary { padding: 1rem; }
 }
@@ -871,4 +872,84 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
   .toast { left: 1rem; right: 1rem; bottom: 1rem; text-align: center; }
   main { padding-left: 1rem; padding-right: 1rem; }
   .wordmark { font-size: 3rem; }
+}
+
+/* ---------- Meal card corner: "Cooked" or the swap button ---------- */
+.meal-slot { position: relative; }
+.meal-slot .meal-card { padding-right: 2.6rem; }
+.corner { position: absolute; top: 0.5rem; right: 0.5rem; }
+
+.swap-btn {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: var(--paper);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.swap-btn svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.swap-btn:hover:not(:disabled) { color: var(--marker); border-color: var(--marker); }
+.swap-btn:disabled { opacity: 0.4; cursor: default; }
+.is-swapping .meal-card { opacity: 0.6; }
+.is-swapping .swap-btn svg { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* A cooked meal gets a small stamp in the corner */
+.cooked-mark {
+  padding: 0.15rem 0.5rem;
+  background: var(--marker);
+  color: #FFFFFF;
+  border-radius: 999px;
+  font-family: var(--display);
+  font-stretch: 90%;
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.meal-slot.is-cooked .meal-card { padding-right: 0.9rem; } /* the stamp sits above the title */
+
+@media (pointer: coarse) {
+  .swap-btn { width: 2.5rem; height: 2.5rem; top: 0.25rem; right: 0.25rem; }
+  .meal-slot .meal-card { padding-right: 3rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-swapping .swap-btn svg { animation: none; }
+}
+
+/* ---------- Shopping list: how much to buy ---------- */
+.items li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem 1rem;
+}
+.buy-box { display: flex; align-items: center; gap: 0.45rem; }
+.buy-label {
+  font-family: var(--display);
+  font-stretch: 90%;
+  font-weight: 650;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.buy-box .pi-amount { width: 8.25rem; }
+.items .done .buy-box { opacity: 0.6; }
+@media (max-width: 480px) {
+  .items li { grid-template-columns: 1fr; }
+  .buy-box { padding-left: 1.7rem; }
+}
+@media (pointer: coarse) {
+  .buy-box .pi-amount { width: 8.75rem; }
 }

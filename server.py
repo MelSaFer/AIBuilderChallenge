@@ -74,12 +74,14 @@ class PlanRecipeRequest(PantryInfo):
     @model_validator(mode="before")
     @classmethod
     def fill_buy(cls, data):
-        # Plans saved before "buy" existed don't have it: use the full quantity (or nothing if they have it).
+        # Plans saved before "buy" or "package" existed don't have them: fill in sensible values.
         meal = data.get("meal") if isinstance(data, dict) else None
         if isinstance(meal, dict):
             for ing in meal.get("ingredients") or []:
                 if isinstance(ing, dict) and "buy" not in ing:
                     ing["buy"] = "" if ing.get("have_it") else ing.get("quantity", "")
+                if isinstance(ing, dict) and "package" not in ing:
+                    ing["package"] = ""
         return data
 
 

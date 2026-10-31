@@ -19,6 +19,7 @@ class Ingredient(BaseModel):
     category: Category  # supermarket section, used to group the shopping list
     have_it: bool  # True if the user already has enough of it in their pantry
     buy: str  # how much to buy: "" when have_it is true, else the missing amount (often the full quantity)
+    package: str  # the usual store size, as a plain amount: "1 l", "12", "250 g", "1 head"
 
 
 class Recipe(BaseModel):
@@ -55,9 +56,15 @@ SYSTEM_PROMPT = """You are a friendly home-cooking assistant.
 You write clear, realistic recipes that a home cook can make with normal kitchen equipment.
 
 Rules:
-- Use common measurements and give every ingredient a quantity.
+- Give every ingredient a quantity in metric units or as a count: "200 g", "180 ml", "2", "3 cloves".
+  Use tsp or tbsp only for small amounts of seasonings, sauces and oil. Never use cups, ounces,
+  pounds or fractions: write "180 ml", not "3/4 cup".
 - Keep ingredient names plain ("garlic", "heavy cream") and quantities short, amount only
   ("3 cloves", "200 g", "to taste"). Put preparation details (minced, grated, reserved) in the steps.
+- package is the size the ingredient is usually sold in at a supermarket, as a plain amount with no
+  words like "carton" or "bag": milk "1 l", eggs "12", butter "250 g", flour "1 kg", garlic "1 head",
+  soy sauce "150 ml", fresh herbs "1 bunch", canned beans "400 g". Fruit and vegetables that are
+  bought loose are counted: onion "1", lemons "1", tomatoes "1". Fill it in for every ingredient.
 - Leave water out of the ingredient list.
 - Steps should be short, numbered actions in the order you do them (do not number them yourself).
 - Set have_it to true only for ingredients that appear in the user's pantry list
