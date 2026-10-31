@@ -150,7 +150,14 @@ def bad_request(_, exc: RequestValidationError):
 # ---------- Routes ----------
 @app.get("/api/status")
 def status():
-    return {"has_key": bool(os.getenv("ANTHROPIC_API_KEY"))}
+    # The Supabase URL and publishable key are meant for the browser: the database
+    # rules only let each signed-in user reach their own rows.
+    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/").removesuffix("/rest/v1")
+    key = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
+    return {
+        "has_key": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "supabase": {"url": url, "key": key} if url and key else None,
+    }
 
 
 @app.post("/api/recipe")

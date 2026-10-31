@@ -14,7 +14,13 @@
 <body>
   <main>
     <header class="page-header">
-      <h1 class="wordmark">Mise</h1>
+      <div class="header-top">
+        <h1 class="wordmark">Mise</h1>
+        <div class="account" id="account" hidden>
+          <span class="account-email" id="account-email"></span>
+          <button type="button" class="btn small" id="account-button">Sign in</button>
+        </div>
+      </div>
       <p>Plan the week for everyone at your table, cook with what's already in your pantry, and shop once for the rest.</p>
     </header>
 
@@ -28,6 +34,7 @@
       <button role="tab" id="tab-create" aria-controls="panel-create" aria-selected="false" tabindex="-1">Create a recipe</button>
       <button role="tab" id="tab-suggest" aria-controls="panel-suggest" aria-selected="false" tabindex="-1">What can I cook?</button>
       <button role="tab" id="tab-list" aria-controls="panel-list" aria-selected="false" tabindex="-1">Shopping list<span id="list-badge"></span></button>
+      <button role="tab" id="tab-favorites" aria-controls="panel-favorites" aria-selected="false" tabindex="-1">Favorites</button>
     </div>
 
     <!-- Meal plan -->
@@ -174,6 +181,11 @@
     <section role="tabpanel" id="panel-list" aria-labelledby="tab-list" hidden>
       <div id="list-content"></div>
     </section>
+
+    <!-- Favorites -->
+    <section role="tabpanel" id="panel-favorites" aria-labelledby="tab-favorites" hidden>
+      <div id="favorites-content"></div>
+    </section>
   </main>
 
   <aside class="pantry" id="pantry" aria-labelledby="pantry-title">
@@ -227,6 +239,30 @@
       <p class="message" id="swap-message" role="status"></p>
     </form>
     <div id="dialog-body"></div>
+  </dialog>
+
+  <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
+    <div class="dialog-bar">
+      <p class="dialog-when" id="account-title">Your account</p>
+      <button type="button" class="btn" id="account-close">Close</button>
+    </div>
+    <form id="account-form" class="account-form">
+      <p class="help">Sign in to keep your pantry, plans, shopping list and favorite recipes on any device.</p>
+      <div class="field">
+        <label for="account-email-input">Email</label>
+        <input id="account-email-input" type="email" autocomplete="email" required maxlength="254">
+      </div>
+      <div class="field">
+        <label for="account-password">Password</label>
+        <input id="account-password" type="password" autocomplete="current-password" required minlength="6" maxlength="72" aria-describedby="account-password-help">
+        <p class="hint" id="account-password-help">At least 6 characters.</p>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn primary" id="sign-in" value="in">Sign in</button>
+        <button type="submit" class="btn" id="sign-up" value="up">Create account</button>
+      </div>
+      <p class="message" id="account-message" role="status"></p>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

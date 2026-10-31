@@ -1,6 +1,8 @@
 // Mise: everything the page does in the browser.
 // Pantry, plan settings, the meal plan and the shopping list are saved in this
 // browser (localStorage), so they are still there next time you open the app.
+// When someone signs in, the same data is also saved in their account (Supabase),
+// along with their favorite recipes, so it follows them to any device.
 
 const CATEGORY_ORDER = [
   "Produce", "Meat & Fish", "Dairy & Eggs", "Bakery", "Pantry",
@@ -32,8 +34,314 @@ const store = {
     } catch {
       toast("Couldn't save in this browser. It may be out of space.");
     }
+    queueCloudSave(key, value);
+  },
+  remove(key) {
+    localStorage.removeItem("cooking-helper:" + key);
   },
 };
+
+// ---------- Account (Supabase): the saved data follows the user ----------
+// The page always opens with this browser's copy, so it's quick. Then, for a signed-in user,
+// it fetches the account's copy, and each change is sent to the account a moment later.
+const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
+const SYNCED = ["pantry", "basics", "shopping", "settings", "plan", "planRecipes"];
+const cloud = { client: null, user: null, timers: {}, pending: {}, signingOut: false, checked: false };
+
+// Keys changed here that the account doesn't have yet. They survive a reload, so a change
+// made just before closing the page isn't overwritten by the account's older copy.
+const unsent = {
+  get: () => new Set(store.load("unsynced", [])),
+  set(keys) { localStorage.setItem("cooking-helper:unsynced", JSON.stringify([...keys])); },
+  add(key) { const k = this.get(); k.add(key); this.set(k); },
+  remove(key) { const k = this.get(); k.delete(key); this.set(k); },
+};
+
+function queueCloudSave(key, value) {
+  if (!cloud.user || !SYNCED.includes(key)) return;
+  unsent.add(key);
+  cloud.pending[key] = value;
+  clearTimeout(cloud.timers[key]);
+  cloud.timers[key] = setTimeout(() => pushKey(key), 800);
+}
+
+async function pushKey(key) {
+  if (!(key in cloud.pending) || !cloud.user) return;
+  const value = cloud.pending[key];
+  delete cloud.pending[key];
+  let error;
+  try {
+    ({ error } = await cloud.client.from("user_data").upsert({
+      user_id: cloud.user.id, key, value: { v: value ?? null }, updated_at: new Date().toISOString(),
+    }));
+  } catch (err) {
+    error = err;
+  }
+  // If it fails, the change stays in this browser and is sent next time the page opens.
+  if (error) toast("Couldn't save to your account. Your changes are kept in this browser for now.");
+  else if (!(key in cloud.pending)) unsent.remove(key);
+}
+
+function flushCloud() {
+  return Promise.all(Object.keys(cloud.pending).map((key) => {
+    clearTimeout(cloud.timers[key]);
+    return pushKey(key);
+  }));
+}
+
+// The same JSON, whatever the order of the keys (the database sorts them).
+function sameJSON(a, b) {
+  const canon = (x) => Array.isArray(x) ? x.map(canon)
+    : isObject(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, canon(x[k])])) : x;
+  return JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+}
+
+// Brings the account's data into this browser. The first time an account is used here, an
+// empty account takes what this browser already has; otherwise the account's copy wins,
+// except for changes made here that it doesn't have yet. Returns true if anything here changed.
+async function pullAll() {
+  const { data, error } = await cloud.client.from("user_data").select("key, value");
+  if (error) throw error;
+  const rows = Object.fromEntries(data.map((r) => [r.key, r.value?.v]));
+  const known = store.load("owner", null) === cloud.user.id;
+  const pendingHere = known ? unsent.get() : new Set();
+  const has = (key) => localStorage.getItem("cooking-helper:" + key) !== null;
+  let changed = false;
+
+  if (!known) unsent.set([]);
+  for (const key of SYNCED) {
+    if (!known && !data.length) {
+      if (has(key)) queueCloudSave(key, store.load(key, null));
+    } else if (pendingHere.has(key)) {
+      queueCloudSave(key, store.load(key, null));
+    } else if (key in rows) {
+      if (!has(key) || !sameJSON(store.load(key, null), rows[key])) {
+        localStorage.setItem("cooking-helper:" + key, JSON.stringify(rows[key]));
+        changed = true;
+      }
+    } else if (!known && has(key)) {
+      store.remove(key);
+      changed = true;
+    }
+  }
+  localStorage.setItem("cooking-helper:owner", JSON.stringify(cloud.user.id));
+  await flushCloud();
+  return changed;
+}
+
+function clearLocalData() {
+  for (const key of [...SYNCED, "owner", "unsynced"]) store.remove(key);
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = el("script", { src });
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.append(script);
+  });
+}
+
+// Runs after the page is drawn, so the account never slows down opening the app.
+async function cloudStart(config) {
+  if (!config) return;
+  await loadScript(SUPABASE_JS);
+  cloud.client = window.supabase.createClient(config.url, config.key);
+  const { data } = await cloud.client.auth.getSession();
+  cloud.user = data.session?.user || null;
+  if (!cloud.user && store.load("owner", null)) {
+    clearLocalData(); // the session ended: don't keep showing the last user's data
+    location.reload();
+    return;
+  }
+  renderAccount();
+  renderFavorites();
+  cloud.client.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_OUT" && cloud.user && !cloud.signingOut) {
+      clearLocalData();
+      location.reload();
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushCloud();
+  });
+  if (!cloud.user) return;
+  await loadFavorites();
+  try {
+    // Another device changed something: show the account's copy.
+    if (await pullAll()) location.reload();
+  } catch {
+    toast("Couldn't reach your account. Showing what's saved in this browser.");
+  }
+}
+
+function renderAccount() {
+  $("account").hidden = !cloud.client;
+  $("account-email").textContent = cloud.user?.email || "";
+  $("account-button").textContent = cloud.user ? "Sign out" : "Sign in";
+}
+
+function openAccount(note = "") {
+  const message = $("account-message");
+  message.classList.remove("error");
+  message.textContent = note;
+  $("account-dialog").showModal();
+  $("account-email-input").focus();
+}
+
+function authMessage(error) {
+  const text = error?.message || "";
+  if (/invalid login credentials/i.test(text)) return "Wrong email or password.";
+  if (/email not confirmed/i.test(text)) return "Confirm your email first: open the link we sent you, then sign in.";
+  if (/already registered/i.test(text)) return "That email already has an account. Sign in instead.";
+  if (/rate limit|too many/i.test(text)) return "Too many tries. Wait a few minutes and try again.";
+  if (/fetch|network/i.test(text)) return "Couldn't reach the server. Check your internet connection.";
+  return text || "Something went wrong. Please try again.";
+}
+
+function setupAccount() {
+  const dialog = $("account-dialog");
+  $("account-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+
+  $("account-button").addEventListener("click", async () => {
+    if (!cloud.client) return;
+    if (!cloud.user) return openAccount();
+    $("account-button").disabled = true;
+    cloud.signingOut = true;
+    await flushCloud();
+    await cloud.client.auth.signOut();
+    clearLocalData();
+    location.reload();
+  });
+
+  $("account-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const signUp = e.submitter?.value === "up";
+    const email = $("account-email-input").value.trim();
+    const password = $("account-password").value;
+    const message = $("account-message");
+    const buttons = [$("sign-in"), $("sign-up")];
+    buttons.forEach((b) => { b.disabled = true; });
+    message.classList.remove("error");
+    message.textContent = signUp ? "Creating your account..." : "Signing in...";
+    try {
+      const { data, error } = signUp
+        ? await cloud.client.auth.signUp({ email, password, options: { emailRedirectTo: location.origin } })
+        : await cloud.client.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      if (signUp && !data.session) {
+        // The project asks new users to confirm their email (or the address is taken; Supabase doesn't say).
+        message.textContent = data.user?.identities?.length === 0
+          ? "That email already has an account. Sign in instead."
+          : "Check your email and open the link to confirm your account. Then sign in here.";
+        return;
+      }
+      cloud.user = data.user;
+      message.textContent = "Loading your saved data...";
+      await pullAll();
+      location.reload();
+    } catch (err) {
+      message.textContent = authMessage(err);
+      message.classList.add("error");
+    } finally {
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  });
+}
+
+// ---------- Favorite recipes (saved in the account) ----------
+let favorites = []; // [{ id, title, recipe, created_at }], newest first
+
+async function loadFavorites() {
+  const { data, error } = await cloud.client.from("favorites")
+    .select("id, title, recipe, created_at").order("created_at", { ascending: false });
+  if (error) return toast("Couldn't load your favorite recipes.");
+  favorites = data;
+  renderFavorites();
+  document.querySelectorAll(".fav-btn").forEach((b) => b.update?.());
+}
+
+const favoriteFor = (title) => favorites.find((f) => f.title === title);
+
+// Only the recipe itself, not whether it was cooked in a plan.
+function plainRecipe(recipe) {
+  const { title, description, total_time_minutes, servings, ingredients, steps } = recipe;
+  return { title, description, total_time_minutes, servings, ingredients, steps };
+}
+
+function favoriteButton(recipe) {
+  const button = el("button", { class: "btn fav-btn", type: "button" });
+  button.update = () => {
+    const on = Boolean(favoriteFor(recipe.title));
+    button.textContent = on ? "♥ Saved" : "♡ Save to favorites";
+    button.setAttribute("aria-pressed", String(on));
+  };
+  button.update();
+  button.addEventListener("click", async () => {
+    if (!cloud.client) return toast("Favorites need an account, and accounts aren't set up on this server.");
+    if (!cloud.user) return openAccount("Sign in to save your favorite recipes.");
+    button.disabled = true;
+    const saved = favoriteFor(recipe.title);
+    let result;
+    try {
+      result = saved
+        ? await cloud.client.from("favorites").delete().eq("id", saved.id)
+        : await cloud.client.from("favorites")
+            .upsert({ title: recipe.title, recipe: plainRecipe(recipe) }, { onConflict: "user_id,title" })
+            .select("id, title, recipe, created_at").single();
+    } catch (err) {
+      result = { error: err };
+    }
+    button.disabled = false;
+    if (result.error) return toast("Couldn't update your favorites. Please try again.");
+    favorites = saved ? favorites.filter((f) => f !== saved) : [result.data, ...favorites];
+    toast(saved ? "Removed from favorites" : "Saved to favorites");
+    document.querySelectorAll(".fav-btn").forEach((b) => b.update?.());
+    renderFavorites();
+    if (button.isConnected) button.focus();
+  });
+  return button;
+}
+
+function renderFavorites() {
+  const box = $("favorites-content");
+  if (!cloud.client) {
+    // Still checking whether accounts are set up: show nothing yet.
+    box.replaceChildren(cloud.checked ? el("p", { class: "intro",
+      text: "Favorites are saved in your account, and accounts aren't set up on this server." }) : "");
+    return;
+  }
+  if (!cloud.user) {
+    box.replaceChildren(
+      el("p", { class: "intro", text: "Sign in to save recipes you love and find them here on any device." }),
+      el("button", { class: "btn primary", type: "button", text: "Sign in", onclick: () => openAccount() }),
+    );
+    return;
+  }
+  if (!favorites.length) {
+    box.replaceChildren(el("p", { class: "intro", text: "No favorites yet. Open any recipe and press ♡ Save to favorites." }));
+    return;
+  }
+  // Keep open the ones that were open (e.g. after removing another favorite).
+  const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.id));
+  box.replaceChildren(
+    el("p", { class: "intro", text: plural(favorites.length, "saved recipe", "saved recipes") + "." }),
+    ...favorites.map((f) => {
+      const details = el("details", { class: "suggestion" },
+        el("summary", {},
+          el("span", { text: f.title }),
+          el("span", { class: "tobuy" }),
+        ),
+        recipeCard(f.recipe, `fav|${f.id}`),
+      );
+      details.dataset.id = f.id;
+      details.open = open.has(f.id);
+      details.querySelector("article.recipe").refresh(); // fills in "N to buy"
+      return details;
+    }),
+  );
+}
 
 function defaultSettings() {
   const allDays = () => [true, true, true, true, true, true, true];
@@ -276,6 +584,7 @@ function savePantry() {
   $("pantry-count").textContent = `${plural(pantry().length, "ingredient", "ingredients")} in your pantry`;
   store.save("pantry", $("pantry-input").value);
   store.save("basics", $("basics").checked);
+  refreshRecipes();
 }
 function updatePantryCount() {
   savePantry();
@@ -604,6 +913,59 @@ function undoPantryChanges(changes) {
   return missed;
 }
 
+// ---------- What you have: checked against the pantry as it is now ----------
+// Claude marks each ingredient (have_it / buy) when it writes a recipe, but the pantry can
+// change afterwards. These work the marks out again from the current pantry.
+const BASICS = /^(?:(?:sea|kosher|table|fine)\s+)?salt(?:\s+and\s+(?:black\s+)?pepper)?$|^(?:freshly\s+)?(?:ground\s+)?(?:black\s+)?pepper$|^(?:(?:extra\s+virgin\s+)?olive|vegetable|cooking|canola|sunflower|neutral)?\s*oil$|^water$/i;
+
+// Do the names share their main words one way or the other ("parmesan" and "parmesan cheese")?
+function looseItem(a, b) {
+  const p = coreWords(a);
+  const r = coreWords(b);
+  return p.size > 0 && r.size > 0 && ([...p].every((w) => r.has(w)) || [...r].every((w) => p.has(w)));
+}
+
+function checkIngredient(ing, rows, basics) {
+  if (basics && BASICS.test(ing.name.trim())) return { have_it: true, buy: "" };
+  const i = findPantryIndex(rows, ing.name);
+  if (i < 0) {
+    // Not clearly in the pantry. Trust Claude's "have it" only if something similar is still there.
+    return ing.have_it && rows.some((r) => looseItem(r.name, ing.name))
+      ? { have_it: true, buy: "" }
+      : { have_it: false, buy: ing.quantity };
+  }
+  const need = parseAmount(ing.quantity);
+  const have = rows[i].amount ? parseAmount(rows[i].amount) : null;
+  // In the pantry without an amount we can compare ("rice", or "garlic 1 head" vs "3 cloves"): you have it.
+  if (!need || !have || need.unit !== have.unit) return { have_it: true, buy: "" };
+  const short = Math.round((need.n - have.n) * 100) / 100;
+  if (short <= 0) return { have_it: true, buy: "" };
+  return { have_it: false, buy: addQuantities([`${short}${need.unit ? " " + need.unit : ""}`]) };
+}
+
+// A copy of the ingredients with have_it and buy worked out from the current pantry.
+function withPantry(ingredients) {
+  const rows = pantry().map(splitPantryLine);
+  const basics = $("basics").checked;
+  return ingredients.map((ing) => ({ ...ing, ...checkIngredient(ing, rows, basics) }));
+}
+
+// A plan meal's ingredients: checked against the pantry, unless it's already cooked
+// (then the pantry no longer has what it used, so its marks stay as they were).
+function mealIngredients(meal) {
+  return planRecipes[mealKey(meal)]?.cooked ? meal.ingredients : withPantry(meal.ingredients);
+}
+
+// When the pantry changes, open recipes and the plan show the new marks.
+let recipeRefreshTimer;
+function refreshRecipes() {
+  clearTimeout(recipeRefreshTimer);
+  recipeRefreshTimer = setTimeout(() => {
+    document.querySelectorAll("article.recipe").forEach((card) => card.refresh?.());
+    if (plan) renderPlan();
+  }, 150);
+}
+
 function cookedSummary({ updated, usedUp, unchanged }) {
   const parts = [];
   if (updated.length) parts.push(`Now in your pantry: ${updated.join(", ")}.`);
@@ -655,10 +1017,35 @@ async function withBusyButton(form, messageId, work) {
 
 // ---------- Recipe card ----------
 function recipeCard(recipe, sourceId = recipe.title) {
-  const missing = recipe.ingredients.filter((i) => !i.have_it);
+  const inPlan = Boolean(planRecipes[sourceId]);
+  // Once cooked, the marks stay as they were: the pantry no longer has what the recipe used.
+  let frozen = inPlan && Boolean(planRecipes[sourceId].cooked);
+  let shown = recipe.ingredients; // the ingredients with the marks on screen
 
-  const ingredients = el("ul", { class: "ings" },
-    ...recipe.ingredients.map((ing) =>
+  const ingredients = el("ul", { class: "ings" });
+  const steps = el("ol", { class: "steps" },
+    ...recipe.steps.map((step) => el("li", {}, el("span", { text: step }))),
+  );
+  const legend = el("p", { class: "legend" },
+    "✓ you have it   ", el("span", { class: "swatch", text: "highlighted" }), " to buy");
+
+  const allSet = el("p", { class: "all-set", text: "You have everything you need." });
+  const addButton = el("button", {
+    class: "btn primary",
+    type: "button",
+    onclick: () => {
+      const meal = planRecipes[sourceId] ? findMeal({ date: sourceId.split("|")[0], meal: sourceId.split("|")[1] }) : null;
+      const source = meal ? mealSource(meal.week.meals[meal.index]) : sourceId;
+      const added = addIngredients(shown, recipe.title, source).length;
+      toast(added ? `Added ${plural(added, "item", "items")} to your shopping list` : "Already on your shopping list");
+    },
+  });
+
+  // Draws the ingredient marks from the pantry as it is now.
+  const draw = () => {
+    if (!frozen) shown = withPantry(recipe.ingredients);
+    const missing = shown.filter((i) => !i.have_it);
+    ingredients.replaceChildren(...shown.map((ing) =>
       el("li", { class: ing.have_it ? "have" : "buy" },
         el("span", { class: "qty", text: ing.quantity }),
         el("span", { class: "name", text: ing.name }),
@@ -666,31 +1053,17 @@ function recipeCard(recipe, sourceId = recipe.title) {
         !ing.have_it && ing.buy && ing.buy !== ing.quantity
           ? el("span", { class: "buy-only", text: `buy ${ing.buy}` })
           : null,
-      )
-    ),
-  );
-  const steps = el("ol", { class: "steps" },
-    ...recipe.steps.map((step) => el("li", {}, el("span", { text: step }))),
-  );
-  const legend = el("p", { class: "legend" },
-    "✓ you have it   ", el("span", { class: "swatch", text: "highlighted" }), " to buy");
-
-  const addButton = missing.length
-    ? el("button", {
-        class: "btn primary",
-        type: "button",
-        text: `Add ${plural(missing.length, "missing ingredient", "missing ingredients")} to shopping list`,
-        onclick: () => {
-          const meal = planRecipes[sourceId] ? findMeal({ date: sourceId.split("|")[0], meal: sourceId.split("|")[1] }) : null;
-          const source = meal ? mealSource(meal.week.meals[meal.index]) : sourceId;
-          const added = addIngredients(recipe.ingredients, recipe.title, source).length;
-          toast(added ? `Added ${plural(added, "item", "items")} to your shopping list` : "Already on your shopping list");
-        },
-      })
-    : null;
+      )));
+    addButton.hidden = !missing.length;
+    addButton.textContent = `Add ${plural(missing.length, "missing ingredient", "missing ingredients")} to shopping list`;
+    allSet.hidden = missing.length > 0;
+    // A suggestion's summary line says how many things to buy.
+    const tobuy = card?.closest(".suggestion")?.querySelector("summary .tobuy");
+    if (tobuy) tobuy.textContent = missing.length ? `${missing.length} to buy` : "you have everything";
+  };
+  let card = null;
 
   // "Cooked it" takes the ingredients out of the pantry. Plan meals remember it (and how to undo it).
-  const inPlan = Boolean(planRecipes[sourceId]);
   let changes = inPlan ? planRecipes[sourceId].cookedChanges || [] : [];
   const cookedNote = el("div", { class: "cooked-note", role: "status" });
   const cookedButton = el("button", { class: "btn is-done", type: "button" });
@@ -702,6 +1075,7 @@ function recipeCard(recipe, sourceId = recipe.title) {
   };
   showCooked(inPlan && planRecipes[sourceId].cooked);
   cookedButton.addEventListener("click", () => {
+    frozen = true;
     const result = useFromPantry(recipe.ingredients);
     changes = result.changes;
     setCooked(sourceId, true, changes);
@@ -711,6 +1085,7 @@ function recipeCard(recipe, sourceId = recipe.title) {
     undoButton.focus();
   });
   undoButton.addEventListener("click", () => {
+    frozen = false;
     const missed = undoPantryChanges(changes);
     changes = [];
     setCooked(sourceId, false, []);
@@ -724,13 +1099,14 @@ function recipeCard(recipe, sourceId = recipe.title) {
 
   const action = recipe.steps.length
     ? el("div", {},
-        missing.length ? null : el("p", { class: "all-set", text: "You have everything you need." }),
-        el("div", { class: "recipe-actions" }, addButton, cookedButton, undoButton),
+        allSet,
+        el("div", { class: "recipe-actions" }, addButton, cookedButton, undoButton, favoriteButton(recipe)),
         cookedNote,
       )
     : null;
 
-  return el("article", { class: "recipe" },
+  draw();
+  card = el("article", { class: "recipe" },
     el("h2", { text: recipe.title }),
     el("p", { class: "desc", text: recipe.description }),
     el("div", { class: "meta" },
@@ -743,6 +1119,8 @@ function recipeCard(recipe, sourceId = recipe.title) {
     ),
     action,
   );
+  card.refresh = draw;
+  return card;
 }
 
 // ---------- Shopping list ----------
@@ -799,7 +1177,7 @@ function addShortfalls(meals) {
   const rows = pantry().map(splitPantryLine);
   const totals = new Map();
   for (const m of meals) {
-    for (const ing of m.ingredients) {
+    for (const ing of mealIngredients(m)) {
       const i = findPantryIndex(rows, ing.name);
       if (i < 0 || !rows[i].amount) continue;
       const have = parseAmount(rows[i].amount);
@@ -830,7 +1208,7 @@ function addShortfalls(meals) {
 // Adds plan meals to the list, plus whatever the pantry runs short of. Returns how many items changed.
 function addMealsToList(meals) {
   const keys = new Set();
-  for (const m of meals) for (const k of addIngredients(m.ingredients, m.title, mealSource(m))) keys.add(k);
+  for (const m of meals) for (const k of addIngredients(mealIngredients(m), m.title, mealSource(m))) keys.add(k);
   for (const k of addShortfalls(meals)) keys.add(k);
   saveShopping();
   return keys.size;
@@ -1277,7 +1655,7 @@ function savePlan() {
 
 // How many different ingredients this week needs to buy.
 function weekMissing(week) {
-  return new Set(week.meals.flatMap((m) => m.ingredients.filter((i) => !i.have_it).map((i) => i.name.trim().toLowerCase()))).size;
+  return new Set(week.meals.flatMap((m) => mealIngredients(m).filter((i) => !i.have_it).map((i) => i.name.trim().toLowerCase()))).size;
 }
 
 // Plans the meals Claude left out of a week.
@@ -1425,7 +1803,7 @@ function swapIcon() {
 // One meal in the plan: the card opens the recipe; the corner shows "Cooked",
 // or a button that swaps the meal for another suggestion straight away.
 function mealCard(meal) {
-  const toBuy = meal.ingredients.filter((i) => !i.have_it).length;
+  const toBuy = mealIngredients(meal).filter((i) => !i.have_it).length;
   const key = mealKey(meal);
   const cooked = planRecipes[key]?.cooked;
   const busy = swapping.has(key);
@@ -1679,7 +2057,7 @@ function setupForms() {
     withBusyButton(suggestForm, "suggest-message", async () => {
       const { recipes } = await post("/api/suggest", { ...kitchen(), notes: $("notes").value.trim() });
       $("suggest-result").replaceChildren(...recipes.map((recipe, n) => {
-        const missing = recipe.ingredients.filter((i) => !i.have_it).length;
+        const missing = withPantry(recipe.ingredients).filter((i) => !i.have_it).length;
         const details = el("details", { class: "suggestion" },
           el("summary", {},
             el("span", { text: recipe.title }),
@@ -1697,19 +2075,29 @@ function setupForms() {
 // ---------- Start ----------
 async function start() {
   setupPantry();
-
+  setupAccount();
   setupTabs();
   setupSettingsForm();
   setupForms();
   setupDialog();
   renderShopping();
   renderPlan();
+  renderFavorites();
 
+  let status = null;
   try {
-    const status = await fetch("/api/status").then((r) => r.json());
+    status = await fetch("/api/status").then((r) => r.json());
     $("key-alert").hidden = status.has_key;
   } catch {
     /* the forms will show a clear error if the server is down */
+  }
+  try {
+    await cloudStart(status?.supabase);
+  } catch {
+    toast("Couldn't reach your account. Showing what's saved in this browser.");
+  } finally {
+    cloud.checked = true;
+    if (!cloud.client) renderFavorites();
   }
 }
 

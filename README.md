@@ -12,7 +12,9 @@ Mise is a web app that uses Claude to help you plan meals and cook. The name com
 - **Create a recipe**: describe what you want to eat and get a full recipe.
 - **What can I cook?**: get recipe ideas that use what's in your pantry.
 
-Your pantry, settings, plan and shopping list are saved in your browser. The page works on phones, tablets and computers.
+- **Accounts and favorites**: sign in with an email and password to keep your pantry, plan, settings and shopping list on any device. Press **Save to favorites** on any recipe to find it later in the Favorites tab.
+
+Without an account, everything is saved in your browser. The page works on phones, tablets and computers.
 
 ## Setup (one time)
 
@@ -30,6 +32,21 @@ Then create a file named `.env` in this folder with this line, using your own AP
 ANTHROPIC_API_KEY=your-key-here
 ```
 
+### Accounts (optional)
+
+Accounts use [Supabase](https://supabase.com). Without these steps the app still works; it just saves everything in the browser.
+
+1. Create a Supabase project.
+2. In the project, open **SQL Editor**, paste everything in `supabase/schema.sql` and press **Run**.
+3. In **Project Settings > API**, copy the project URL and the publishable key, and add them to `.env`:
+
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+New users get an email to confirm their account. To skip that, turn off **Confirm email** in **Authentication > Sign In / Providers > Email**. If you keep it, set **Authentication > URL Configuration > Site URL** to the address of your app (for example `http://localhost:8000`) so the link in the email opens it.
+
 ## Run
 
 ```powershell
@@ -44,3 +61,4 @@ Then open http://localhost:8000 in your browser. To stop the app, press `Ctrl + 
 - `server.py`: the Python server. Serves the page and sends requests to Claude.
 - `cooking.py`: the prompts and the recipe and meal plan formats Claude answers with.
 - `static/`: the web page (`index.html`, `style.css`, `app.js`).
+- `supabase/schema.sql`: the database tables for accounts and favorites.
