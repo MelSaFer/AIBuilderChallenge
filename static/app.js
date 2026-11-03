@@ -253,7 +253,8 @@ async function cloudStart(config) {
   await loadFavorites();
   try {
     // Another device changed something: show the account's copy.
-    if (await pullAll()) autoReload();
+    if (await pullAll() && autoReload()) return;
+    await loadTastes();
   } catch {
     toast("Couldn't reach your account. Showing what's saved in this browser.");
   }
@@ -892,6 +893,16 @@ function stepFor(n, unit) {
 
 // The pantry is a plain list until the user presses Edit.
 let pantryEditing = false;
+// What's being typed in "Add what you have": the list narrows to it, so you see at once
+// whether you already have something. No extra field or button.
+let pantryQuery = "";
+
+// Does a pantry item match what's typed? Every typed word appears in its name ("tomato" finds "tomatoes").
+function matchesQuery(name, query) {
+  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(singular);
+  const text = name.toLowerCase();
+  return words.length > 0 && words.every((w) => text.includes(w));
+}
 
 function renderPantryList() {
   const items = pantry().map(splitPantryLine);
@@ -900,7 +911,19 @@ function renderPantryList() {
   $("pantry-list-head").hidden = !items.length && !pantryEditing;
   $("pantry-text-toggle").hidden = !pantryEditing;
   $("pantry-list").classList.toggle("is-editing", pantryEditing);
-  $("pantry-list").replaceChildren(...items.map((item, i) => (pantryEditing ? pantryRow(item, i) : pantryView(item))));
+  // Rows keep their place in the whole pantry (i), so editing a filtered row changes the right line.
+  const shown = items.map((item, i) => [item, i]).filter(([item]) => !pantryQuery || matchesQuery(item.name, pantryQuery));
+  $("pantry-list").replaceChildren(...shown.map(([item, i]) => (pantryEditing ? pantryRow(item, i) : pantryView(item))));
+  const note = $("pantry-find-note");
+  if (!pantryQuery || !items.length || textOpen) note.replaceChildren();
+  else if (shown.length) note.replaceChildren(`You have ${plural(shown.length, "match", "matches")} for “${pantryQuery}”.`);
+  else note.replaceChildren(el("strong", { text: `No ${pantryQuery}` }), " in your pantry. Press Add to add it.");
+}
+
+// The last thing typed, without its amount: "rice 1 kg, sal" -> "sal".
+function queryFromAddField() {
+  const parts = $("pantry-add").value.split(/,(?!\d)/);
+  return splitPantryLine(parts[parts.length - 1] || "").name.trim();
 }
 
 // "1100 g" reads as "1.1 kg"; litres as "L" so they don't look like a capital I.
@@ -1042,8 +1065,9 @@ function setupPantry() {
         if (sum) same.amount = sum; else unclear.push(f.name);
       }
     }
-    writePantry(items);
     input.value = "";
+    pantryQuery = "";
+    writePantry(items);
     input.focus();
     toast(unclear.length
       ? `Couldn't add the amounts for ${unclear.join(", ")}. Change them in the list.`
@@ -1051,6 +1075,12 @@ function setupPantry() {
   });
 
   $("pantry-edit").addEventListener("click", () => setPantryEditing(!pantryEditing));
+  $("pantry-add").addEventListener("input", () => {
+    const query = queryFromAddField();
+    if (query === pantryQuery) return;
+    pantryQuery = query;
+    renderPantryList();
+  });
 
   const textToggle = $("pantry-text-toggle");
   textToggle.addEventListener("click", () => {
@@ -1441,6 +1471,50 @@ function setTaste(title, taste) {
   if (taste === "like") settings.likes = [...settings.likes, title].slice(-50);
   if (taste === "dislike") settings.dislikes = [...settings.dislikes, title].slice(-50);
   saveSettings();
+  saveTasteToCloud(title);
+  renderTastes();
+  document.querySelectorAll(".taste").forEach((group) => group.update?.());
+}
+
+// ---------- Tastes in the account (table "tastes": one row per dish, with the reason) ----------
+// Signed out, tastes live in this browser's settings. Signed in, the table is the record and
+// this browser keeps a copy. If the table isn't set up yet, the settings copy is all there is.
+function tasteRow(title) {
+  const taste = tasteOf(title);
+  return taste && { title, taste, reason: taste === "dislike" ? settings.dislikeNotes[title] || null : null,
+                    updated_at: new Date().toISOString() };
+}
+
+const missingTable = (error) => /tastes|PGRST205|42P01|schema cache/i.test(`${error?.code} ${error?.message}`);
+
+async function saveTasteToCloud(title) {
+  if (!cloud.user || cloud.noTastesTable) return;
+  const row = tasteRow(title);
+  const { error } = row
+    ? await cloud.client.from("tastes").upsert(row, { onConflict: "user_id,title" })
+    : await cloud.client.from("tastes").delete().eq("title", title);
+  if (!error) return;
+  if (missingTable(error)) cloud.noTastesTable = true; // not set up yet: settings still keep them
+  else toast("Couldn't save that to your account. It's kept in this browser.");
+}
+
+async function loadTastes() {
+  if (!cloud.user) return;
+  const { data, error } = await cloud.client.from("tastes").select("title, taste, reason").order("updated_at");
+  if (error) {
+    if (missingTable(error)) cloud.noTastesTable = true;
+    return;
+  }
+  // First time with the table: copy what this browser already knows.
+  if (!data.length) {
+    const rows = [...settings.likes, ...settings.dislikes].map(tasteRow).filter(Boolean);
+    if (rows.length) await cloud.client.from("tastes").upsert(rows, { onConflict: "user_id,title" });
+    return;
+  }
+  settings.likes = data.filter((r) => r.taste === "like").map((r) => r.title).slice(-50);
+  settings.dislikes = data.filter((r) => r.taste === "dislike").map((r) => r.title).slice(-50);
+  settings.dislikeNotes = Object.fromEntries(data.filter((r) => r.taste === "dislike" && r.reason).map((r) => [r.title, r.reason]));
+  saveSettings();
   renderTastes();
   document.querySelectorAll(".taste").forEach((group) => group.update?.());
 }
@@ -1491,6 +1565,7 @@ function reasonPanel(recipe, done) {
     if (note) {
       settings.dislikeNotes[recipe.title] = note;
       saveSettings();
+      saveTasteToCloud(recipe.title);
       renderTastes();
     }
     done(note);

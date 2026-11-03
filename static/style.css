@@ -540,13 +540,13 @@ fieldset .check { margin-top: 0.75rem; }
 .pantry {
   background: var(--steel-deep);
   border-left: 1px solid var(--edge);
-  padding: 3rem 1.5rem 2rem;
+  padding: 0 1.5rem 2rem; /* top space is on .pantry-head, so the sticky bar sits flush */
   position: sticky;
   top: 0;
   height: 100vh;
   overflow-y: auto;
 }
-.pantry-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.pantry-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding-top: 3rem; }
 .pantry h2 {
   font-stretch: 70%;
   font-weight: 900;
@@ -679,6 +679,12 @@ fieldset .check { margin-top: 0.75rem; }
   justify-content: space-between;
   gap: 0.75rem;
   margin-top: 1.5rem;
+  /* Stays at the top while you scroll a long pantry, so Edit / Done is always at hand */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.55rem 0;
+  background: var(--steel-deep);
 }
 .pantry-list-title { font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.95rem; }
 .pantry-list-head + .pantry-list { margin-top: 0.6rem; }
@@ -807,8 +813,10 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
     border-left: 0;
     border-bottom: 1px solid var(--edge);
     padding: 1.25rem clamp(1rem, 5vw, 2rem) 1.25rem;
+    overflow: visible; /* the page scrolls here, so the pantry's bar sticks to the screen */
   }
   .pantry h2 { font-size: 1.6rem; }
+  .pantry-head { padding-top: 0; }
   .pantry-toggle { display: inline-block; }
   .pantry.collapsed .pantry-body { display: none; }
   .pantry.collapsed .pantry-count { margin-bottom: 0; }
@@ -1227,3 +1235,8 @@ dialog.confirm-dialog { width: min(440px, calc(100vw - 2rem)); }
 .reason-panel input::placeholder { color: #66727C; }
 .reason-actions { display: flex; gap: 0.5rem; }
 .taste-why { display: block; color: var(--muted); font-size: 0.85rem; }
+
+/* "You have 2 matches for rice" / "No saffron in your pantry" while typing in Add what you have */
+.pantry-find-note { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.pantry-find-note:empty { display: none; }
+.pantry-find-note strong { color: var(--ink); }

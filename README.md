@@ -90,7 +90,7 @@ Open http://localhost:8000. To stop the app, press `Ctrl + C` in PowerShell.
 ## Your data
 
 - **Without an account**, everything stays in your browser: pantry, plan settings, meal plan, recipes opened from the plan and shopping list. Clearing the browser's site data deletes it.
-- **With an account**, the same data is also saved in Supabase, together with your favorite recipes. Changes are sent a moment after you make them. Signing out removes the copy from that browser; **Delete account** removes everything for good.
+- **With an account**, the same data is also saved in Supabase, together with your favorite recipes and the dishes you liked or didn't (table `tastes`, with the reason when you give one). Changes are sent a moment after you make them. Signing out removes the copy from that browser; **Delete account** removes everything for good.
 - **Claude** receives only what it needs for each request: your pantry, your household's restrictions and the recipe or plan you're working on.
 
 ## Troubleshooting

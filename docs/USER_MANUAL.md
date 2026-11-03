@@ -54,6 +54,12 @@ Type in **Add what you have** and press **Add**:
 
 If the ingredient is already in your pantry with an amount, the new amount is added to it: `rice 1 kg` plus `rice 500 g` becomes `rice 1.5 kg`.
 
+### Check whether you have something
+
+Start typing in **Add what you have** and the list shows only what matches, with a note like "You have 2 matches for "tomato"". If you don't have it, the note says so: press **Add** to add it. Clear the field to see the whole list again.
+
+In a long pantry, the **What you have** bar (with **Edit**, **Done** and **Edit as text**) stays at the top while you scroll.
+
 ### Change amounts or remove items
 
 The pantry shows a plain list, so nothing changes by accident. To edit it:

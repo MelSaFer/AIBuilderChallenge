@@ -65,3 +65,31 @@ $$;
 
 revoke all on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- Likes and dislikes: one row per dish a user rated, with an optional reason.
+-- Future plans and recipe ideas avoid what they didn't like.
+create table if not exists public.tastes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 200),
+  taste text not null check (taste in ('like', 'dislike')),
+  reason text check (reason is null or char_length(reason) <= 120),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, title)
+);
+create index if not exists tastes_user_updated on public.tastes (user_id, updated_at);
+
+alter table public.tastes enable row level security;
+
+drop policy if exists "Own tastes: read" on public.tastes;
+drop policy if exists "Own tastes: add" on public.tastes;
+drop policy if exists "Own tastes: change" on public.tastes;
+drop policy if exists "Own tastes: delete" on public.tastes;
+create policy "Own tastes: read" on public.tastes for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Own tastes: add" on public.tastes for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Own tastes: change" on public.tastes for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Own tastes: delete" on public.tastes for delete to authenticated using ((select auth.uid()) = user_id);
+
+revoke all on public.tastes from anon;
+grant select, insert, update, delete on public.tastes to authenticated;
