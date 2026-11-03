@@ -1,6 +1,6 @@
 """Talks to Claude to create recipes and suggest recipes from your pantry."""
 
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 import os
 
@@ -54,6 +54,12 @@ class MealPlan(BaseModel):
     meals: List[PlannedMeal]
 
 
+class RecipeChatReply(BaseModel):
+    """An answer in the recipe chat. recipe is the whole updated recipe, or null if nothing changed."""
+    reply: str
+    recipe: Optional[Recipe]
+
+
 SYSTEM_PROMPT = """You are a friendly home-cooking assistant.
 You write clear, realistic recipes that a home cook can make with normal kitchen equipment.
 
@@ -96,15 +102,17 @@ def _pantry_text(pantry: List[str], has_basics: bool) -> str:
     return "The user's pantry contains: " + ", ".join(items)
 
 
-def _ask(prompt: str, output_type: type[BaseModel], effort: str = "medium") -> BaseModel:
+def _ask(prompt: str | list, output_type: type[BaseModel], effort: str = "medium", system: str = SYSTEM_PROMPT) -> BaseModel:
+    """prompt is one message, or a whole conversation ([{"role", "content"}, ...])."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise CookingError("No API key found. Add ANTHROPIC_API_KEY to the .env file and restart the server.")
+    messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
     try:
         response = _client().messages.parse(
             model=MODEL,
             max_tokens=16000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+            system=system,
+            messages=messages,
             output_format=output_type,
             output_config={"effort": effort},
         )
@@ -258,3 +266,35 @@ Restrictions everyone must respect:
 {household}
 {_pantry_text(pantry, has_basics)}"""
     return _ask(prompt, Recipe)
+
+
+CHAT_RULES = """
+Right now you're in the kitchen with the user while they cook the recipe below, answering in a chat.
+
+- Reply in the language the user writes in, briefly (1 to 4 short sentences) and practically.
+- If they ask a question or tell you how it's going ("is this brown enough?", "what's next?",
+  "I burned the garlic"), answer it and set recipe to null. Keep in mind which steps they've done.
+- If they want the recipe changed (an ingredient they don't have or don't want, more or fewer
+  servings, less time, other equipment, a dietary change), return the whole updated recipe in
+  recipe, following every rule above: adjust ingredients, quantities and steps, and work out
+  have_it, buy and package again against the pantry. Update the title if it names something
+  you removed or replaced ("Banana Pancakes" without banana becomes "Apple Pancakes"); otherwise
+  keep it. Keep the recipe in the language it's written in. In reply, say in one or two sentences
+  what you changed.
+- If a change would make the dish not work, say so and suggest the closest thing that would.
+- Never give unsafe advice (undercooked meat, eggs or rice left out, allergens for someone allergic).
+"""
+
+
+def chat_recipe(recipe: Recipe, messages: List[dict], household: str, pantry: List[str], has_basics: bool) -> RecipeChatReply:
+    """Answers the user about the recipe they're cooking, and adapts it when they ask."""
+    system = f"""{SYSTEM_PROMPT}
+{CHAT_RULES}
+Restrictions everyone eating must respect:
+{household}
+{_pantry_text(pantry, has_basics)}
+
+The recipe as it is now (JSON):
+{recipe.model_dump_json()}"""
+    # Low effort: the user is waiting at the stove, and a reply is short.
+    return _ask(messages, RecipeChatReply, effort="low", system=system)

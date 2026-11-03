@@ -7,7 +7,7 @@ serve those files, and talk to Claude so the API key never reaches the browser.
 import os
 from datetime import date
 from pathlib import Path
-from typing import Annotated, List
+from typing import Annotated, List, Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -18,13 +18,22 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 
 from cooking import (
     CookingError, MealName, PlannedMeal, Recipe,
-    create_recipe, plan_meals, plan_recipe, suggest_recipes,
+    chat_recipe, create_recipe, plan_meals, plan_recipe, suggest_recipes,
 )
 
 load_dotenv()
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="Mise")
+
+
+# Browsers check for a newer page and script every time, so a fix reaches them on the next load.
+@app.middleware("http")
+async def always_fresh_files(request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # ---------- What the page sends ----------
@@ -115,6 +124,48 @@ class PlanRecipeRequest(PantryInfo):
                for i in m.ingredients):
             raise ValueError("ingredient too large")
         date.fromisoformat(m.date)
+        return self
+
+
+def fill_missing_fields(ingredients):
+    """Recipes saved before "buy" or "package" existed don't have them: fill in sensible values."""
+    if isinstance(ingredients, list):
+        for ing in ingredients:
+            if isinstance(ing, dict) and "buy" not in ing:
+                ing["buy"] = "" if ing.get("have_it") else ing.get("quantity", "")
+            if isinstance(ing, dict) and "package" not in ing:
+                ing["package"] = ""
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
+class RecipeChatRequest(PantryInfo):
+    recipe: Recipe
+    messages: List[ChatMessage] = Field(min_length=1, max_length=40)
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_old_recipes(cls, data):
+        if isinstance(data, dict) and isinstance(data.get("recipe"), dict):
+            fill_missing_fields(data["recipe"].get("ingredients"))
+        return data
+
+    @model_validator(mode="after")
+    def check(self):
+        # The recipe comes back from the browser, so it gets size limits like everything else.
+        r = self.recipe
+        if len(r.title) > 200 or len(r.description) > 600 or len(r.ingredients) > 60 or len(r.steps) > 40:
+            raise ValueError("recipe too large")
+        if any(len(step) > 1500 for step in r.steps):
+            raise ValueError("step too long")
+        if any(len(i.name) > 100 or len(i.quantity) > 40 or len(i.buy) > 40 or len(i.package) > 40
+               for i in r.ingredients):
+            raise ValueError("ingredient too large")
+        if self.messages[-1].role != "user":
+            raise ValueError("the last message must be the user's")
         return self
 
 
@@ -219,6 +270,24 @@ def api_plan_recipe(body: PlanRecipeRequest):
     except CookingError as e:
         return _error(str(e))
     return recipe.model_dump()
+
+
+@app.post("/api/recipe/chat")
+def api_recipe_chat(body: RecipeChatRequest):
+    # Claude needs turns that alternate, starting with the user: join any repeats.
+    turns = []
+    for m in body.messages:
+        if turns and turns[-1]["role"] == m.role:
+            turns[-1]["content"] += "\n\n" + m.content
+        else:
+            turns.append({"role": m.role, "content": m.content})
+    if turns[0]["role"] != "user":
+        turns.pop(0)
+    try:
+        answer = chat_recipe(body.recipe, turns, household_text(body.people), body.pantry, body.has_basics)
+    except CookingError as e:
+        return _error(str(e))
+    return {"reply": answer.reply, "recipe": answer.recipe.model_dump() if answer.recipe else None}
 
 
 @app.get("/")

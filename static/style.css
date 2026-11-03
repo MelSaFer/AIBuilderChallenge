@@ -1029,3 +1029,59 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
 @media (max-width: 480px) {
   .account-email { max-width: 11rem; }
 }
+
+/* ---------- Recipe chat: ask while you cook ---------- */
+.recipe-chat { margin-top: 1.75rem; border-top: 1px dashed var(--edge); padding-top: 1.25rem; }
+.recipe-chat > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--display);
+  font-stretch: 90%;
+  font-weight: 650;
+  font-size: 1.05rem;
+  color: var(--marker);
+}
+.recipe-chat > summary::-webkit-details-marker { display: none; }
+.recipe-chat > summary::before { content: "+"; display: inline-grid; place-items: center; width: 1.4rem; height: 1.4rem; border: 1px solid currentColor; border-radius: 4px; font-weight: 700; }
+.recipe-chat[open] > summary::before { content: "−"; }
+.recipe-chat > summary:hover { color: var(--marker-dark); }
+.chat-body { display: grid; gap: 0.9rem; margin-top: 0.9rem; max-width: 46rem; }
+.chat-body .help { margin: 0; }
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0.25rem 0.1rem;
+}
+.chat-msg { max-width: 85%; padding: 0.6rem 0.85rem; border-radius: var(--r-paper); line-height: 1.45; }
+.chat-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-msg.is-user { align-self: flex-end; background: var(--steel); }
+.chat-msg.is-assistant { align-self: flex-start; background: var(--paper); border: 1px solid var(--edge); border-left: 3px solid var(--marker); }
+.chat-msg.is-thinking p { color: var(--muted); font-style: italic; }
+.chat-changed { margin-top: 0.35rem !important; font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.9rem; color: var(--marker); }
+.chat-log .message { margin: 0; }
+
+.chat-form { display: flex; gap: 0.5rem; }
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  background: var(--paper);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-control);
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: var(--ink);
+}
+.chat-form input::placeholder { color: #66727C; }
+.chat-form input:focus { border-color: var(--marker); outline: none; }
+.chat-form input:focus-visible { outline: 3px solid var(--marker); outline-offset: 1px; }
+
+@media (max-width: 480px) {
+  .chat-msg { max-width: 95%; }
+}

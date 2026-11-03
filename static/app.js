@@ -57,6 +57,17 @@ const unsent = {
   remove(key) { const k = this.get(); k.delete(key); this.set(k); },
 };
 
+// When each key was last saved in the account, as this browser last saw it. If the account's
+// time is different, another device changed it; otherwise this browser's copy is the newer one.
+const syncedAt = {
+  all: () => store.load("syncedAt", {}) || {},
+  set(key, time) {
+    const all = this.all();
+    all[key] = time;
+    localStorage.setItem("cooking-helper:syncedAt", JSON.stringify(all));
+  },
+};
+
 function queueCloudSave(key, value) {
   if (!cloud.user || !SYNCED.includes(key)) return;
   unsent.add(key);
@@ -69,17 +80,18 @@ async function pushKey(key) {
   if (!(key in cloud.pending) || !cloud.user) return;
   const value = cloud.pending[key];
   delete cloud.pending[key];
-  let error;
+  let error, data;
   try {
-    ({ error } = await cloud.client.from("user_data").upsert({
+    ({ data, error } = await cloud.client.from("user_data").upsert({
       user_id: cloud.user.id, key, value: { v: value ?? null }, updated_at: new Date().toISOString(),
-    }));
+    }).select("updated_at").single());
   } catch (err) {
     error = err;
   }
   // If it fails, the change stays in this browser and is sent next time the page opens.
-  if (error) toast("Couldn't save to your account. Your changes are kept in this browser for now.");
-  else if (!(key in cloud.pending)) unsent.remove(key);
+  if (error) return toast("Couldn't save to your account. Your changes are kept in this browser for now.");
+  syncedAt.set(key, data.updated_at);
+  if (!(key in cloud.pending)) unsent.remove(key);
 }
 
 function flushCloud() {
@@ -97,27 +109,41 @@ function sameJSON(a, b) {
 }
 
 // Brings the account's data into this browser. The first time an account is used here, an
-// empty account takes what this browser already has; otherwise the account's copy wins,
-// except for changes made here that it doesn't have yet. Returns true if anything here changed.
+// empty account takes what this browser already has, and otherwise the account's copy is used.
+// After that, the account's copy only replaces this browser's when another device changed it;
+// if this browser has something newer (like the plan's start date moved to today), it's sent up.
+// Returns true if anything here changed.
 async function pullAll() {
-  const { data, error } = await cloud.client.from("user_data").select("key, value");
+  const { data, error } = await cloud.client.from("user_data").select("key, value, updated_at");
   if (error) throw error;
-  const rows = Object.fromEntries(data.map((r) => [r.key, r.value?.v]));
+  const rows = Object.fromEntries(data.map((r) => [r.key, r]));
   const known = store.load("owner", null) === cloud.user.id;
   const pendingHere = known ? unsent.get() : new Set();
+  const seen = known ? syncedAt.all() : {};
   const has = (key) => localStorage.getItem("cooking-helper:" + key) !== null;
   let changed = false;
 
-  if (!known) unsent.set([]);
+  if (!known) {
+    unsent.set([]);
+    localStorage.removeItem("cooking-helper:syncedAt");
+  }
   for (const key of SYNCED) {
+    const row = rows[key];
+    const here = store.load(key, null);
     if (!known && !data.length) {
-      if (has(key)) queueCloudSave(key, store.load(key, null));
+      if (has(key)) queueCloudSave(key, here);
     } else if (pendingHere.has(key)) {
-      queueCloudSave(key, store.load(key, null));
-    } else if (key in rows) {
-      if (!has(key) || !sameJSON(store.load(key, null), rows[key])) {
-        localStorage.setItem("cooking-helper:" + key, JSON.stringify(rows[key]));
-        changed = true;
+      queueCloudSave(key, here);
+    } else if (row) {
+      const same = has(key) && sameJSON(here, row.value?.v);
+      if (known && seen[key] === row.updated_at) {
+        if (!same && has(key)) queueCloudSave(key, here); // only this browser changed it
+      } else {
+        if (!same) {
+          localStorage.setItem("cooking-helper:" + key, JSON.stringify(row.value?.v));
+          changed = true;
+        }
+        syncedAt.set(key, row.updated_at);
       }
     } else if (!known && has(key)) {
       store.remove(key);
@@ -130,7 +156,7 @@ async function pullAll() {
 }
 
 function clearLocalData() {
-  for (const key of [...SYNCED, "owner", "unsynced"]) store.remove(key);
+  for (const key of [...SYNCED, "owner", "unsynced", "syncedAt"]) store.remove(key);
 }
 
 function loadScript(src) {
@@ -142,6 +168,16 @@ function loadScript(src) {
   });
 }
 
+// Reloads the page by itself (not when the user signs in or out), at most once every 15 seconds,
+// so nothing can keep reloading it.
+function autoReload() {
+  const last = Number(sessionStorage.getItem("mise:auto-reload")) || 0;
+  if (Date.now() - last < 15000) return false;
+  sessionStorage.setItem("mise:auto-reload", String(Date.now()));
+  location.reload();
+  return true;
+}
+
 // Runs after the page is drawn, so the account never slows down opening the app.
 async function cloudStart(config) {
   if (!config) return;
@@ -151,15 +187,14 @@ async function cloudStart(config) {
   cloud.user = data.session?.user || null;
   if (!cloud.user && store.load("owner", null)) {
     clearLocalData(); // the session ended: don't keep showing the last user's data
-    location.reload();
-    return;
+    if (autoReload()) return;
   }
   renderAccount();
   renderFavorites();
   cloud.client.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT" && cloud.user && !cloud.signingOut) {
       clearLocalData();
-      location.reload();
+      autoReload();
     }
   });
   document.addEventListener("visibilitychange", () => {
@@ -169,7 +204,7 @@ async function cloudStart(config) {
   await loadFavorites();
   try {
     // Another device changed something: show the account's copy.
-    if (await pullAll()) location.reload();
+    if (await pullAll()) autoReload();
   } catch {
     toast("Couldn't reach your account. Showing what's saved in this browser.");
   }
@@ -1140,7 +1175,7 @@ function recipeCard(recipe, sourceId = recipe.title) {
     : null;
 
   draw();
-  card = el("article", { class: "recipe" },
+  card = el("article", { class: "recipe", "data-source": sourceId },
     el("h2", { text: recipe.title }),
     el("p", { class: "desc", text: recipe.description }),
     el("div", { class: "meta" },
@@ -1152,9 +1187,128 @@ function recipeCard(recipe, sourceId = recipe.title) {
       el("section", {}, el("h3", { text: "Steps" }), steps),
     ),
     action,
+    recipe.steps.length ? recipeChat(recipe, sourceId) : null,
   );
   card.refresh = draw;
   return card;
+}
+
+// ---------- Recipe chat: ask while you cook, or change the recipe ----------
+// One conversation per recipe, kept while the page is open (closing and reopening a meal keeps it).
+const chats = new Map(); // sourceId -> { messages: [{ role, content, changed }], open, busy, error, render }
+
+function chatFor(sourceId) {
+  if (!chats.has(sourceId)) chats.set(sourceId, { messages: [], open: false, busy: false, error: "" });
+  return chats.get(sourceId);
+}
+
+function recipeChat(recipe, sourceId) {
+  const chat = chatFor(sourceId);
+  const log = el("div", { class: "chat-log", role: "log", "aria-live": "polite" });
+  const input = el("input", {
+    type: "text", maxlength: 1000, autocomplete: "off",
+    placeholder: "I'm out of bananas, can we adapt it?",
+    "aria-label": "Ask a question or ask for a change",
+  });
+  const send = el("button", { class: "btn primary", type: "submit", text: "Send" });
+  const form = el("form", { class: "chat-form" }, input, send);
+  const box = el("details", { class: "recipe-chat" },
+    el("summary", { text: "Ask or change something" }),
+    el("div", { class: "chat-body" },
+      el("p", { class: "help", text: "Missing an ingredient, cooking for more people, or not sure about a step? Ask here. If you ask for a change, the recipe updates." }),
+      log, form),
+  );
+  box.open = chat.open;
+  box.addEventListener("toggle", () => {
+    chat.open = box.open;
+    if (box.open) input.focus();
+  });
+
+  // The newest card for this recipe draws the conversation (an older one may be closed by now).
+  chat.render = () => {
+    log.replaceChildren(
+      ...chat.messages.map((m) => el("div", { class: `chat-msg is-${m.role}` },
+        el("p", { text: m.content }),
+        m.changed ? el("p", { class: "chat-changed", text: "✓ Recipe updated" }) : null,
+      )),
+      chat.busy ? el("div", { class: "chat-msg is-assistant is-thinking" }, el("p", { text: "Thinking..." })) : "",
+      chat.error ? el("p", { class: "message error", text: chat.error }) : "",
+    );
+    log.hidden = !log.childElementCount;
+    send.disabled = chat.busy;
+    log.scrollTop = log.scrollHeight;
+  };
+  chat.render();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text || chat.busy) return;
+    chat.messages.push({ role: "user", content: text });
+    chat.busy = true;
+    chat.error = "";
+    input.value = "";
+    chat.render();
+    try {
+      const people = planRecipes[sourceId] ? planSettings().people : settings.people;
+      const answer = await post("/api/recipe/chat", {
+        ...kitchen(people),
+        recipe: plainRecipe(planRecipes[sourceId] || recipe),
+        messages: chat.messages.slice(-20).map(({ role, content }) => ({ role, content })),
+      });
+      chat.messages.push({ role: "assistant", content: answer.reply, changed: Boolean(answer.recipe) });
+      if (answer.recipe) {
+        chat.busy = false;
+        adaptRecipe(answer.recipe, sourceId);
+      }
+    } catch (err) {
+      // Take the question back so it can be sent again.
+      chat.messages.pop();
+      chat.error = err.message;
+      if (input.isConnected && !input.value) input.value = text;
+    } finally {
+      chat.busy = false;
+      chat.render();
+    }
+  });
+  return box;
+}
+
+// Puts the recipe Claude changed in place of the old one: on screen, and in the plan if it's from there.
+function adaptRecipe(fresh, sourceId) {
+  if (planRecipes[sourceId]) {
+    const { cooked, cookedChanges } = planRecipes[sourceId];
+    planRecipes[sourceId] = { ...fresh, cooked, cookedChanges };
+    const [date, meal] = sourceId.split("|");
+    const spot = findMeal({ date, meal });
+    if (spot) {
+      const old = spot.week.meals[spot.index];
+      const updated = { ...old, title: fresh.title, description: fresh.description,
+                        total_time_minutes: fresh.total_time_minutes, ingredients: fresh.ingredients };
+      // If the old version is on the shopping list, put the new one there instead.
+      const listed = Object.values(shopping).some((item) => !item.done && fixItem(item).sources.includes(mealSource(old)));
+      spot.week.meals[spot.index] = updated;
+      if (listed) {
+        removeFromList(old);
+        addIngredients(withPantry(updated.ingredients), updated.title, mealSource(updated));
+      }
+      const dialog = $("meal-dialog");
+      if (dialog.meal && mealKey(dialog.meal) === sourceId) dialog.meal = updated;
+      savePlan();
+      renderPlan();
+    }
+    store.save("planRecipes", planRecipes);
+  }
+  const live = document.querySelector(`article.recipe[data-source="${CSS.escape(sourceId)}"]`);
+  if (live) {
+    const next = recipeCard(fresh, sourceId);
+    live.replaceWith(next);
+    const summary = next.closest(".suggestion")?.querySelector("summary span");
+    if (summary) summary.textContent = fresh.title;
+    next.refresh(); // updates a suggestion's "N to buy"
+    next.querySelector(".chat-form input")?.focus();
+  }
+  toast("Recipe updated");
 }
 
 // ---------- Shopping list ----------
