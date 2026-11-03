@@ -381,7 +381,9 @@ function renderFavorites() {
 function defaultSettings() {
   const allDays = () => [true, true, true, true, true, true, true];
   return {
-    people: [{ name: "", restrictions: [], notes: "" }],
+    servings: 2, // how many people eat
+    restrictions: [], // apply to every meal
+    restrictionNotes: "",
     length: 7,
     start: isoDate(new Date()),
     meals: { Breakfast: allDays(), Lunch: allDays(), Dinner: allDays() },
@@ -411,12 +413,20 @@ function cleanSettings(saved) {
     const days = saved.meals?.[m];
     out.meals[m] = Array.isArray(days) && days.length === 7 ? days.map(Boolean) : d.meals[m];
   }
-  const people = Array.isArray(saved.people) && saved.people.length ? saved.people.slice(0, 12) : d.people;
-  out.people = people.map((x) => ({
-    name: typeof x?.name === "string" ? x.name : "",
-    restrictions: Array.isArray(x?.restrictions) ? x.restrictions.filter((r) => typeof r === "string") : [],
-    notes: typeof x?.notes === "string" ? x.notes : "",
-  }));
+  // Settings saved before there was one household had a card per person: combine them.
+  if (Array.isArray(saved.people) && saved.people.length && saved.servings === undefined) {
+    const people = saved.people.filter(isObject);
+    out.servings = people.length;
+    out.restrictions = [...new Set(people.flatMap((x) => (Array.isArray(x.restrictions) ? x.restrictions : [])))];
+    out.restrictionNotes = people
+      .filter((x) => typeof x.notes === "string" && x.notes.trim())
+      .map((x) => (typeof x.name === "string" && x.name.trim() ? `${x.name.trim()}: ${x.notes.trim()}` : x.notes.trim()))
+      .join("; ");
+  }
+  delete out.people;
+  out.servings = Math.min(20, Math.max(1, Math.round(Number(out.servings)) || d.servings));
+  out.restrictions = Array.isArray(out.restrictions) ? out.restrictions.filter((r) => typeof r === "string").slice(0, 30) : [];
+  out.restrictionNotes = typeof out.restrictionNotes === "string" ? out.restrictionNotes.slice(0, 300) : "";
   for (const k of ["weekdayMinutes", "weekendMinutes"]) if (!MINUTES.includes(Number(out[k]))) out[k] = d[k];
   for (const k of ["relaxed", "leftovers", "repeats"]) if (typeof out[k] !== "boolean") out[k] = d[k];
   for (const k of ["diet", "dietOther", "requirements"]) if (typeof out[k] !== "string") out[k] = "";
@@ -1044,8 +1054,10 @@ function cookedSummary({ updated, usedUp, unchanged }) {
 }
 
 // What every request to the server includes.
-function kitchen(people = settings.people) {
-  return { pantry: pantry(), has_basics: $("basics").checked, people };
+function kitchen(cfg = settings) {
+  // The server reads restrictions as a list of people; the whole household is one entry.
+  const people = [{ name: "Everyone", restrictions: cfg.restrictions, notes: cfg.restrictionNotes }];
+  return { pantry: pantry(), has_basics: $("basics").checked, people, household_size: cfg.servings };
 }
 
 // ---------- Talking to the server ----------
@@ -1250,9 +1262,8 @@ function recipeChat(recipe, sourceId) {
     input.value = "";
     chat.render();
     try {
-      const people = planRecipes[sourceId] ? planSettings().people : settings.people;
       const answer = await post("/api/recipe/chat", {
-        ...kitchen(people),
+        ...kitchen(planRecipes[sourceId] ? planSettings() : settings),
         recipe: plainRecipe(planRecipes[sourceId] || recipe),
         messages: chat.messages.slice(-20).map(({ role, content }) => ({ role, content })),
       });
@@ -1595,45 +1606,18 @@ function downloadList() {
 }
 
 // ---------- Plan settings form ----------
-function renderPeople() {
-  const box = $("people");
-  box.replaceChildren(...settings.people.map((person, i) => {
-    const name = el("input", {
-      type: "text", maxlength: 60, placeholder: `Person ${i + 1}`, "aria-label": `Name of person ${i + 1}`,
+// Restrictions for everyone eating: one chip each.
+function renderRestrictions() {
+  $("restrictions").replaceChildren(...RESTRICTIONS.map((r) => {
+    const box = el("input", { type: "checkbox" });
+    box.checked = settings.restrictions.includes(r);
+    box.addEventListener("change", () => {
+      settings.restrictions = box.checked
+        ? [...settings.restrictions, r]
+        : settings.restrictions.filter((x) => x !== r);
+      saveSettings();
     });
-    name.value = person.name;
-    name.addEventListener("input", () => { person.name = name.value; saveSettings(); });
-
-    const notes = el("input", {
-      type: "text", maxlength: 300, placeholder: "Other restrictions or foods they don't eat",
-      "aria-label": `Other restrictions for person ${i + 1}`,
-    });
-    notes.value = person.notes;
-    notes.addEventListener("input", () => { person.notes = notes.value; saveSettings(); });
-
-    const chips = el("div", { class: "chips", role: "group", "aria-label": `Restrictions for person ${i + 1}` },
-      ...RESTRICTIONS.map((r) => {
-        const box = el("input", { type: "checkbox" });
-        box.checked = person.restrictions.includes(r);
-        box.addEventListener("change", () => {
-          person.restrictions = box.checked
-            ? [...person.restrictions, r]
-            : person.restrictions.filter((x) => x !== r);
-          saveSettings();
-        });
-        return el("label", { class: "chip" }, box, el("span", { text: r }));
-      }),
-    );
-
-    const remove = settings.people.length > 1
-      ? el("button", {
-          type: "button", class: "btn small", text: "Remove",
-          "aria-label": `Remove person ${i + 1}`,
-          onclick: () => { settings.people.splice(i, 1); saveSettings(); renderPeople(); },
-        })
-      : null;
-
-    return el("div", { class: "person" }, el("div", { class: "person-top" }, name, remove), chips, notes);
+    return el("label", { class: "chip" }, box, el("span", { text: r }));
   }));
 }
 
@@ -1669,8 +1653,13 @@ function setupSettingsForm() {
   $("leftovers").checked = settings.leftovers;
   $("repeats").checked = settings.repeats;
   $("requirements").value = settings.requirements;
+  $("household-size").value = settings.servings;
+  $("restriction-notes").value = settings.restrictionNotes;
 
   const read = () => {
+    const size = Math.round(Number($("household-size").value));
+    if (size >= 1 && size <= 20) settings.servings = size; // an empty or odd number keeps the last good one
+    settings.restrictionNotes = $("restriction-notes").value;
     settings.length = Number(document.querySelector("input[name=length]:checked").value);
     settings.start = $("start").value || isoDate(new Date());
     settings.weekdayMinutes = Number($("weekday-minutes").value);
@@ -1687,13 +1676,7 @@ function setupSettingsForm() {
   $("plan-form").addEventListener("change", read);
   $("plan-form").addEventListener("input", read);
 
-  $("add-person").addEventListener("click", () => {
-    if (settings.people.length >= 12) return toast("You can add up to 12 people");
-    settings.people.push({ name: "", restrictions: [], notes: "" });
-    saveSettings();
-    renderPeople();
-    $("people").lastElementChild.querySelector("input").focus();
-  });
+  $("household-size").addEventListener("blur", () => { $("household-size").value = settings.servings; });
 
   $("plan-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1706,7 +1689,7 @@ function setupSettingsForm() {
     startNewPlan();
   });
 
-  renderPeople();
+  renderRestrictions();
   renderMealGrid();
   saveSettings();
 }
@@ -1715,8 +1698,8 @@ function saveSettings() {
   store.save("settings", settings);
   const meals = buildSlots().length;
   $("plan-summary").textContent =
-    `${plural(meals, "meal", "meals")} for ${plural(settings.people.length, "person", "people")}`;
-  const hasRules = settings.people.some((p) => p.restrictions.length || p.notes.trim());
+    `${plural(meals, "meal", "meals")} for ${plural(settings.servings, "person", "people")}`;
+  const hasRules = settings.restrictions.length > 0 || settings.restrictionNotes.trim() !== "";
   document.querySelectorAll(".household-note").forEach((n) => (n.hidden = !hasRules));
 }
 
@@ -1749,7 +1732,7 @@ function slotFor(date, meal, cfg) {
 function requestMeals(slots, extra = {}) {
   const cfg = planSettings();
   return post("/api/plan", {
-    ...kitchen(cfg.people),
+    ...kitchen(cfg),
     slots,
     diet: cfg.diet === "other" ? cfg.dietOther : cfg.diet,
     requirements: cfg.requirements,
@@ -1777,8 +1760,8 @@ function startNewPlan() {
   plan = {
     start: settings.start,
     length: settings.length,
-    servings: settings.people.length,
-    people: settings.people.map((p) => p.name.trim()).filter(Boolean),
+    servings: settings.servings,
+    people: [],
     settings: JSON.parse(JSON.stringify(settings)), // later edits to the form don't change this plan
     weeks,
   };
@@ -2064,7 +2047,7 @@ async function openMeal(meal) {
   if (!dialog.open) dialog.showModal();
 
   try {
-    const recipe = await post("/api/plan/recipe", { ...kitchen(planSettings().people), meal });
+    const recipe = await post("/api/plan/recipe", { ...kitchen(planSettings()), meal });
     // The meal may have been swapped (or the plan replaced) while the recipe was being written.
     const spot = findMeal(meal);
     if (!spot || spot.week.meals[spot.index] !== meal) return;
@@ -2211,7 +2194,7 @@ function setupTabs() {
 
 // ---------- Create a recipe / What can I cook? ----------
 function setupForms() {
-  $("servings").value = Math.min(20, settings.people.length || 2);
+  $("servings").value = Math.min(20, settings.servings || 2);
 
   const createForm = $("create-form");
   createForm.addEventListener("submit", (e) => {

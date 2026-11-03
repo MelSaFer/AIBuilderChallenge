@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=3">
-  <script src="/app.js?v=3" defer></script>
+  <link rel="stylesheet" href="/style.css?v=5">
+  <script src="/app.js?v=4" defer></script>
 </head>
 <body>
   <main>
@@ -45,9 +45,19 @@
 
           <fieldset>
             <legend>Who's eating</legend>
-            <p class="help">Everyone eats the same meals. Each person's restrictions apply to the whole plan.</p>
-            <div id="people"></div>
-            <button type="button" class="btn" id="add-person">Add a person</button>
+            <p class="help">Everyone eats the same meals, so these restrictions apply to every meal.</p>
+            <div class="field field-small">
+              <label for="household-size">How many people</label>
+              <input type="number" id="household-size" min="1" max="20" inputmode="numeric">
+            </div>
+            <div class="field">
+              <span class="field-label" id="restrictions-label">Restrictions</span>
+              <div class="chips" id="restrictions" role="group" aria-labelledby="restrictions-label"></div>
+            </div>
+            <div class="field">
+              <label for="restriction-notes">Other restrictions or foods to avoid (optional)</label>
+              <input type="text" id="restriction-notes" maxlength="300" placeholder="No mushrooms, mild spice for the kids..." autocomplete="off">
+            </div>
           </fieldset>
 
           <fieldset>

@@ -377,27 +377,6 @@ legend {
 legend + * { clear: both; }
 fieldset .check { margin-top: 0.75rem; }
 
-/* People */
-.person {
-  display: grid;
-  gap: 0.6rem;
-  padding: 1rem;
-  border-radius: var(--r-control);
-  background: var(--steel);
-  margin-bottom: 0.75rem;
-}
-.person-top { display: flex; gap: 0.6rem; align-items: center; }
-.person-top input { flex: 1; }
-.person input[type="text"] {
-  width: 100%;
-  background: var(--paper);
-  border: 1px solid var(--edge);
-  border-radius: var(--r-control);
-  padding: 0.55rem 0.75rem;
-  font: inherit;
-  color: var(--ink);
-}
-
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chip { position: relative; }
 .chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -801,10 +780,10 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 /* Keyboard focus that is easy to see */
 :focus-visible { outline: 3px solid var(--marker); outline-offset: 2px; }
 .field input:focus, .field select:focus, .field textarea:focus,
-.pantry textarea:focus, .person input[type="text"]:focus,
+.pantry textarea:focus,
 .pantry-add-row input:focus { border-color: var(--marker); outline: none; }
 .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible,
-.pantry textarea:focus-visible, .person input[type="text"]:focus-visible,
+.pantry textarea:focus-visible,
 .pantry-add-row input:focus-visible { outline: 3px solid var(--marker); outline-offset: 1px; }
 
 @media (max-width: 1180px) and (min-width: 761px) {
@@ -1085,3 +1064,6 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
 @media (max-width: 480px) {
   .chat-msg { max-width: 95%; }
 }
+
+/* "How many people" holds a small number */
+#household-size { max-width: 7rem; }

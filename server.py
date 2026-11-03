@@ -54,6 +54,7 @@ class PantryInfo(BaseModel):
     pantry: List[PantryItem] = Field(default_factory=list, max_length=MAX_PANTRY)
     has_basics: bool = True
     people: List[Person] = Field(default_factory=list, max_length=12)
+    household_size: int | None = Field(default=None, ge=1, le=20)  # how many eat; else one per person
 
 
 class CreateRequest(PantryInfo):
@@ -182,6 +183,10 @@ def household_text(people: List[Person]) -> str:
     return "\n".join(lines) or "- No restrictions."
 
 
+def household_size(body: PantryInfo) -> int:
+    return body.household_size or max(1, len(body.people))
+
+
 def has_restrictions(people: List[Person]) -> bool:
     return any(p.restrictions or p.notes.strip() for p in people)
 
@@ -245,7 +250,7 @@ def api_plan(body: PlanRequest):
         meals = plan_meals(
             [s.model_dump() for s in body.slots],
             household_text(body.people),
-            max(1, len(body.people)),
+            household_size(body),
             body.diet,
             body.requirements,
             body.leftovers,
@@ -265,7 +270,7 @@ def api_plan(body: PlanRequest):
 def api_plan_recipe(body: PlanRecipeRequest):
     try:
         recipe = plan_recipe(
-            body.meal, max(1, len(body.people)), household_text(body.people), body.pantry, body.has_basics
+            body.meal, household_size(body), household_text(body.people), body.pantry, body.has_basics
         )
     except CookingError as e:
         return _error(str(e))
