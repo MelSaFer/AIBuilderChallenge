@@ -14,6 +14,9 @@
   --tomato: #D2462C;
   --tomato-tint: #F7D6CC;
   --danger: #A8321D;
+  --placeholder: #66727C;
+  --marker-on-ink: #CFE0F4; /* marker blue, lightened to read on the dark toast */
+  --marker-line-on-ink: #9DBFE6;
   --display: 'Archivo', 'Arial Narrow', system-ui, sans-serif;
   --body: 'Literata', Georgia, serif;
   --r-paper: 4px;
@@ -85,7 +88,7 @@ main {
 .alert {
   background: var(--tomato-tint);
   color: var(--danger);
-  border-left: 4px solid var(--tomato);
+  border: 1px solid var(--tomato);
   border-radius: var(--r-paper);
   padding: 1rem 1.25rem;
   margin-bottom: 1.5rem;
@@ -153,7 +156,7 @@ main {
   font: inherit;
   color: var(--ink);
 }
-.field input::placeholder, .field textarea::placeholder { color: #66727C; }
+.field input::placeholder, .field textarea::placeholder { color: var(--placeholder); }
 .field textarea { resize: vertical; }
 .field select { cursor: pointer; }
 .field input + input { margin-top: 0.6rem; }
@@ -233,8 +236,8 @@ fieldset > .field + .field, fieldset > .row + .field { margin-top: 1rem; }
   border-bottom: 1px dashed var(--edge);
 }
 .qty { color: var(--muted); white-space: nowrap; min-width: 4.5em; font-size: 0.95rem; }
-.have .name::before { content: "✓ "; color: var(--marker); font-weight: 700; }
-.buy .name, .swatch, .meal-card .facts .tobuy {
+.have .name::before { content: "✓ "; color: var(--ink); font-weight: 700; }
+.buy .name, .swatch {
   background: var(--tomato-tint);
   box-shadow: inset 0 -2px 0 var(--tomato);
   color: var(--ink);
@@ -277,7 +280,7 @@ fieldset > .field + .field, fieldset > .row + .field { margin-top: 1rem; }
   max-width: 44rem;
 }
 .cooked-note p { margin: 0; flex: 1 1 20rem; }
-.all-set { margin: 1.75rem 0 0; font-weight: 700; color: var(--marker); }
+.all-set { margin: 1.75rem 0 0; font-weight: 700; color: var(--ink); }
 
 /* Suggestions */
 .suggestion { margin-bottom: 0.75rem; }
@@ -332,7 +335,7 @@ fieldset > .field + .field, fieldset > .row + .field { margin-top: 1rem; }
 }
 
 /* ---------- Plan settings ---------- */
-.help { color: var(--muted); font-size: 0.92rem; margin: 0 0 0.9rem; max-width: 42em; }
+.help { color: var(--muted); font-size: 0.92rem; margin: 0 0 0.9rem; max-width: 42em; text-wrap: pretty; }
 
 .settings {
   background: var(--paper);
@@ -424,9 +427,51 @@ fieldset .check { margin-top: 0.75rem; }
   text-align: center;
 }
 .meal-grid th[scope="row"] { text-align: left; padding-left: 0; padding-right: 1rem; }
-.meal-grid td { text-align: center; padding: 0.3rem 0.55rem; }
-.meal-grid input { width: 1.15rem; height: 1.15rem; accent-color: var(--marker); cursor: pointer; }
-.meal-grid .weekend { color: var(--marker); }
+.meal-grid td { text-align: center; padding: 0; }
+.meal-grid .cell { display: grid; place-items: center; min-width: 2.5rem; min-height: 2.25rem; padding: 0 0.3rem; cursor: pointer; border-radius: 4px; }
+.meal-grid .cell:hover { background: var(--steel); }
+.meal-grid input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--marker); cursor: pointer; }
+
+/* The basics: people, length and start on one line, then the button. */
+fieldset.basics { border-top: 0; padding-top: 0.25rem; }
+.basics-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem 1.5rem; }
+.basics-row .field { flex: none; }
+.basics-row #household-size { width: 7rem; }
+.pantry-tip { margin: 1rem 0 0; }
+.pantry-tip .link-btn { margin: 0; padding: 0; font-size: inherit; font-family: inherit; font-stretch: inherit; vertical-align: baseline; }
+
+/* Everything else folds under "More options", with a line saying what's chosen there. */
+.more-options { border-top: 1px dashed var(--edge); }
+.more-options > summary {
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.6rem;
+  align-items: baseline;
+  padding: 1rem 0;
+}
+.more-options > summary::-webkit-details-marker { display: none; }
+.more-options > summary::before {
+  content: "+";
+  grid-row: span 2;
+  align-self: center;
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--marker);
+  border-radius: 4px;
+  color: var(--marker);
+  font-family: var(--display);
+  font-weight: 700;
+}
+.more-options[open] > summary::before { content: "−"; }
+.more-title { font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 1.05rem; color: var(--marker); }
+.more-options > summary:hover .more-title { color: var(--marker-dark); }
+.more-what { grid-column: 2; color: var(--muted); font-size: 0.92rem; }
+.more-options[open] .more-what { display: none; }
+.more-options[open] > summary { padding-bottom: 0.25rem; }
 
 .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding-top: 1.25rem; border-top: 1px dashed var(--edge); }
 .form-actions .help { margin: 0; }
@@ -530,7 +575,7 @@ fieldset .check { margin-top: 0.75rem; }
   line-height: 1.2;
 }
 .meal-card .facts { font-size: 0.85rem; color: var(--muted); margin-top: auto; padding-top: 0.35rem; }
-.meal-card .facts .tobuy { font-weight: 600; }
+.meal-card .facts .tobuy { font-weight: 600; color: var(--ink); } /* plain text: the tomato highlight is for the recipe and the list */
 .meal-card.placeholder { cursor: default; background: transparent; border: 1px dashed var(--edge); color: var(--muted); }
 
 .week-pending { padding: 1.25rem 0; color: var(--muted); }
@@ -556,7 +601,7 @@ fieldset .check { margin-top: 0.75rem; }
   transform: rotate(1.5deg);
 }
 .pantry-toggle { display: none; }
-.pantry .hint { color: var(--muted); font-size: 0.9rem; margin: 0.4rem 0 0; }
+.pantry .hint { color: var(--muted); font-size: 0.9rem; margin: 0.4rem 0 0; text-wrap: pretty; }
 .pantry .pantry-count { margin: 0.75rem 0 1.25rem; }
 .pantry-body { container-type: inline-size; }
 .pantry-body label:not(.check) {
@@ -580,7 +625,7 @@ fieldset .check { margin-top: 0.75rem; }
   font: inherit;
   color: var(--ink);
 }
-.pantry-add-row input::placeholder { color: #66727C; }
+.pantry-add-row input::placeholder { color: var(--placeholder); }
 
 /* One row per ingredient: name, amount + unit, − + and remove */
 .pantry-list { list-style: none; margin: 1.25rem 0 0; padding: 0; border-top: 2px solid var(--ink); }
@@ -621,7 +666,7 @@ fieldset .check { margin-top: 0.75rem; }
   text-align: right;
   color: var(--ink);
 }
-.pi-number::placeholder { color: #66727C; }
+.pi-number::placeholder { color: var(--placeholder); }
 .pi-unit {
   flex: none;
   width: 4.1rem;
@@ -736,7 +781,7 @@ fieldset .check { margin-top: 0.75rem; }
   font: inherit;
   line-height: 1.6em;
 }
-.pantry textarea::placeholder { color: #66727C; }
+.pantry textarea::placeholder { color: var(--placeholder); }
 
 /* ---------- Meal dialog ---------- */
 dialog {
@@ -784,6 +829,22 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
   pointer-events: none;
 }
 .toast.show { opacity: 1; transform: none; }
+/* With a button ("Undo"): the toast can be clicked */
+.toast.has-action { display: flex; align-items: center; gap: 1rem; padding-right: 0.5rem; }
+.toast.show.has-action { pointer-events: auto; }
+.toast-action {
+  flex: none;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  background: transparent;
+  border: 1.5px solid var(--marker-line-on-ink);
+  border-radius: var(--r-control);
+  color: var(--marker-on-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.toast-action:hover { background: rgba(255, 255, 255, 0.08); color: var(--paper); }
+.toast-action:focus-visible { outline: 3px solid var(--tape); outline-offset: 2px; }
 
 /* Keyboard focus that is easy to see */
 :focus-visible { outline: 3px solid var(--marker); outline-offset: 2px; }
@@ -819,7 +880,15 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
   .pantry-head { padding-top: 0; }
   .pantry-toggle { display: inline-block; }
   .pantry.collapsed .pantry-body { display: none; }
-  .pantry.collapsed .pantry-count { margin-bottom: 0; }
+  /* Folded: one slim bar, title, count and the button on a single line */
+  .pantry.collapsed { display: flex; flex-wrap: wrap; align-items: center; column-gap: 0.75rem; padding-top: 0.7rem; padding-bottom: 0.7rem; }
+  .pantry.collapsed .pantry-head { display: contents; }
+  .pantry.collapsed h2 { font-size: 1.25rem; }
+  .pantry.collapsed .pantry-count { margin: 0; flex: 1; order: 1; }
+  .pantry.collapsed .count-extra { display: none; } /* "3 ingredients", the bar already says My pantry */
+  .pantry.collapsed .pantry-toggle { order: 2; }
+  /* The pantry bar above has its own Add button, so the tip isn't needed here */
+  .pantry-tip { display: none; }
   .pantry-body { max-width: 40rem; }
   main { padding-top: 2.25rem; }
 }
@@ -834,6 +903,10 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
   .day-meals > * { grid-column: auto !important; }
   .settings-body { padding: 0 1rem 1.25rem; }
   .settings > summary { padding: 1rem; }
+  /* People and start date side by side, plan length below */
+  .basics-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; }
+  .basics-row .field:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .basics-row #start { max-width: 12rem; }
 }
 @media (max-width: 480px) {
   .tabs { gap: 1rem; }
@@ -853,10 +926,22 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 .swap-panel .field { max-width: 40rem; }
 .swap-panel .message { margin: 0; }
 
-/* Small phones: tabs wrap onto two lines instead of hiding off-screen */
+/* Small phones: tabs stay on one line and slide sideways. The right edge fades
+   while there are more tabs to the right (app.js sets .more-right), so none look missing. */
 @media (max-width: 480px) {
-  .tabs { flex-wrap: wrap; row-gap: 0.25rem; border-bottom-width: 2px; }
-  .dialog-bar { flex-wrap: wrap; }
+  .tabs { margin-left: -1rem; margin-right: -1rem; padding: 0 1rem; scroll-padding: 0 1rem; }
+  .tabs.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent); }
+  .tabs.more-left.more-right { mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 3rem), transparent); }
+  .tabs.more-left:not(.more-right) { mask-image: linear-gradient(to right, transparent, #000 2rem); }
+
+  /* Meal dialog: date on the left (it may take two lines), buttons on the right, one bar */
+  .dialog-bar { align-items: center; gap: 0.6rem; padding-top: 0.6rem; padding-bottom: 0.6rem; }
+  .dialog-when { flex: 1; min-width: 0; font-size: 0.92rem; line-height: 1.3; }
+  .dialog-tools { flex-wrap: nowrap; flex: none; gap: 0.4rem; }
+  .dialog-tools .btn { padding-left: 0.75rem; padding-right: 0.75rem; }
+  .swap-extra { display: none; }
+
+  .toast.has-action { justify-content: space-between; text-align: left; }
 }
 
 /* Very wide screens: the page stops growing, so close off the pantry column */
@@ -918,8 +1003,8 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 /* A cooked meal gets a small stamp in the corner */
 .cooked-mark {
   padding: 0.15rem 0.5rem;
-  background: var(--marker);
-  color: #FFFFFF;
+  background: var(--ink);
+  color: var(--paper);
   border-radius: 999px;
   font-family: var(--display);
   font-stretch: 90%;
@@ -973,7 +1058,7 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
   margin: 0.75rem 0;
   padding: 0.6rem 0.9rem;
   background: var(--tomato-tint);
-  border-left: 4px solid var(--tomato);
+  border: 1px solid var(--tomato);
   border-radius: var(--r-paper);
 }
 .week-missing p { margin: 0; color: var(--danger); font-weight: 700; }
@@ -984,12 +1069,24 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 /* A typed amount that isn't a number */
 .pi-number[aria-invalid="true"] { color: var(--danger); background: var(--tomato-tint); }
 
-/* Small phones: the meals grid fits, weekend included */
+/* Small phones: the meals grid fits, weekend included, and spreads over the full width */
 @media (max-width: 480px) {
-  .meal-grid th, .meal-grid td { padding: 0.3rem 0.12rem; }
+  .meal-grid { width: 100%; }
+  .meal-grid th { padding: 0.3rem 0.12rem; }
   .meal-grid th[scope="row"] { padding-right: 0.4rem; font-size: 0.85rem; }
   .meal-grid th[scope="col"] { font-size: 0.8rem; }
-  .meal-grid input { margin: 0; }
+  .meal-grid .cell { min-width: 0; padding: 0; }
+}
+
+/* ---------- Touch screens: every control at least 44 px tall ---------- */
+@media (pointer: coarse) {
+  .meal-grid .cell { min-height: 2.75rem; }
+  .chip span { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 0.95rem; }
+  .btn { min-height: 2.75rem; }
+  .segmented span { min-height: 2.5rem; display: flex; align-items: center; }
+  .tabs button { min-height: 2.75rem; }
+  .link-btn { min-height: 2.75rem; }
+  .pantry-tip .link-btn { min-height: 0; } /* inside a sentence */
 }
 
 /* ---------- Account (sign in) and favorites ---------- */
@@ -1051,9 +1148,9 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
 .chat-msg { max-width: 85%; padding: 0.6rem 0.85rem; border-radius: var(--r-paper); line-height: 1.45; }
 .chat-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-msg.is-user { align-self: flex-end; background: var(--steel); }
-.chat-msg.is-assistant { align-self: flex-start; background: var(--paper); border: 1px solid var(--edge); border-left: 3px solid var(--marker); }
+.chat-msg.is-assistant { align-self: flex-start; background: var(--paper); border: 1px solid var(--edge); }
 .chat-msg.is-thinking p { color: var(--muted); font-style: italic; }
-.chat-changed { margin-top: 0.35rem !important; font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.9rem; color: var(--marker); }
+.chat-changed { margin-top: 0.35rem !important; font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.9rem; color: var(--ink); }
 .chat-log .message { margin: 0; }
 
 .chat-form { display: flex; gap: 0.5rem; }
@@ -1067,7 +1164,7 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
   font: inherit;
   color: var(--ink);
 }
-.chat-form input::placeholder { color: #66727C; }
+.chat-form input::placeholder { color: var(--placeholder); }
 .chat-form input:focus { border-color: var(--marker); outline: none; }
 .chat-form input:focus-visible { outline: 3px solid var(--marker); outline-offset: 1px; }
 
@@ -1196,7 +1293,7 @@ dialog.confirm-dialog { width: min(440px, calc(100vw - 2rem)); }
 .taste-btn[aria-pressed="true"] svg { fill: currentColor; fill-opacity: 0.25; }
 
 .tastes { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem 2rem; }
-.taste-list h4 { margin: 0 0 0.4rem; font-family: var(--display); font-stretch: 90%; font-weight: 700; font-size: 1rem; }
+.taste-list-title { margin: 0 0 0.4rem; font-family: var(--display); font-stretch: 90%; font-weight: 700; font-size: 1rem; }
 .taste-list ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--edge); }
 .taste-list li {
   display: flex;
@@ -1232,7 +1329,7 @@ dialog.confirm-dialog { width: min(440px, calc(100vw - 2rem)); }
 }
 .reason-panel input[type="text"]:focus { border-color: var(--marker); outline: none; }
 .reason-panel input[type="text"]:focus-visible { outline: 3px solid var(--marker); outline-offset: 1px; }
-.reason-panel input::placeholder { color: #66727C; }
+.reason-panel input::placeholder { color: var(--placeholder); }
 .reason-actions { display: flex; gap: 0.5rem; }
 .taste-why { display: block; color: var(--muted); font-size: 0.85rem; }
 

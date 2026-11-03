@@ -24,7 +24,7 @@ Mise plans your meals around what's already in your kitchen, writes the recipes,
 Open Mise in your browser (if you run it on your own computer, the address is http://localhost:8000). The page has two parts:
 
 - **On the left**, the tabs: **Meal plan**, **Create a recipe**, **What can I cook?**, **Shopping list** and **Favorites**.
-- **On the right**, **My pantry**: the list of what you have at home. On a phone, the pantry sits at the top of the page; press **Hide** or **Show** to fold it away.
+- **On the right**, **My pantry**: the list of what you have at home. On a phone, the pantry is a slim bar at the top of the page: press **Show** (or **Add**, while it's empty) to open it and **Hide** to fold it away. The tabs fit on one line; slide them sideways to see the rest.
 
 You don't need an account. Without one, everything is saved in the browser you're using. With one, your data follows you to any device (see [Your account](#10-your-account)).
 
@@ -33,8 +33,8 @@ Amounts are metric: grams (g), kilograms (kg), millilitres (ml) and litres (L), 
 ## 2. Your first meal plan in five minutes
 
 1. **Fill your pantry.** In **Add what you have**, type what's in your kitchen, separated by commas, and press **Add**. For example: `rice 1 kg, eggs 12, chicken breast 500 g, onions 3, tomatoes`. Amounts are optional.
-2. **Open Plan settings** in the **Meal plan** tab. Set **How many people**, tick any **Restrictions**, and choose how long to plan.
-3. **Untick the meals you don't make** in **Which meals**, such as weekday lunches you eat at work.
+2. **In the Meal plan tab**, set **How many people** and choose how long to plan.
+3. **Optional:** open **More options** to tick any **Restrictions** or untick the meals you don't make in **Which meals**, such as weekday lunches you eat at work.
 4. **Press Create meal plan.** Each week appears as soon as it's ready (about 40 seconds per week).
 5. **Press Add to shopping list** next to a week. Everything you're missing goes to the **Shopping list** tab.
 6. **Click any meal** to read its recipe.
@@ -79,13 +79,17 @@ Leave **I have basics (salt, pepper, oil, water)** ticked if you always have the
 
 Open **Plan settings** at the top of the **Meal plan** tab. Your choices are saved as you make them.
 
-**Who's eating**
+At the top are the basics:
 
 - **How many people**: everyone eats the same meals, and recipes are written for this many servings.
+- **Plan length**: **1 week**, **2 weeks** or **1 month**, and the day it **Starts on**.
+
+Everything else is under **More options**. While it's closed, the line under it shows what you've chosen there (for example "Vegetarian · Mediterranean · 21 meals a week").
+
+**Who's eating**
+
 - **Restrictions**: tick everything that applies to anyone at the table (Vegetarian, Gluten-free, Nut allergy…). Every meal respects all of them.
 - **Other restrictions or foods to avoid**: anything else, in your own words ("no mushrooms, mild spice for the kids").
-
-**How long**: **1 week**, **2 weeks** or **1 month**, and the day it starts.
 
 **Which meals**: a grid of days and meals. Untick any meal you don't need planned.
 
@@ -109,7 +113,8 @@ The plan shows one row per day, with its meals as cards. Each card shows the dis
 
 - **Open a meal**: click its card to read the recipe.
 - **Swap a meal**: press the round arrows in the card's corner and Mise suggests a different dish straight away. With **Cook once, eat twice**, swapping a dinner also swaps the next day's leftovers lunch.
-- **Swap with a reason**: open the meal, press **Swap this meal**, and say what you'd rather have ("not a fan of fish", "something lighter").
+- **Changed your mind?** Press **Undo** in the message at the bottom of the screen (it stays about 8 seconds). The old meal comes back with its recipe and its shopping-list items.
+- **Swap with a reason**: open the meal, press **Swap this meal** (just **Swap** on a phone), and say what you'd rather have ("not a fan of fish", "something lighter").
 - **Cooked meals** show **✓ Cooked** in the corner.
 - **Add to the shopping list**: press **Add to shopping list** next to a week, or **Add whole plan to shopping list** at the top.
 - **Delete plan** removes the plan. Your shopping list stays as it is.
@@ -167,7 +172,7 @@ The **Shopping list** tab shows how many items are left, grouped by supermarket 
 - **✕** removes a single item. **Clear whole list** empties it, after asking you to confirm.
 - **Download list** saves the list as a text file, handy for your phone.
 
-When you swap a meal, its ingredients come off the list (except the ones you've already ticked).
+When you swap a meal, its ingredients come off the list (except the ones you've already ticked); **Undo** puts them back.
 
 ## 9. Create a recipe and What can I cook?
 

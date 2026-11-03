@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=17">
-  <script src="/app.js?v=15" defer></script>
+  <link rel="stylesheet" href="/style.css?v=21">
+  <script src="/app.js?v=17" defer></script>
 </head>
 <body>
   <main>
@@ -43,26 +43,14 @@
         <summary>Plan settings</summary>
         <form id="plan-form" class="settings-body">
 
-          <fieldset>
-            <legend>Who's eating</legend>
-            <p class="help">Everyone eats the same meals, so these restrictions apply to every meal.</p>
-            <div class="field field-small">
-              <label for="household-size">How many people</label>
-              <input type="number" id="household-size" min="1" max="20" inputmode="numeric">
-            </div>
-            <div class="field">
-              <span class="field-label" id="restrictions-label">Restrictions</span>
-              <div class="chips" id="restrictions" role="group" aria-labelledby="restrictions-label"></div>
-            </div>
-            <div class="field">
-              <label for="restriction-notes">Other restrictions or foods to avoid (optional)</label>
-              <input type="text" id="restriction-notes" maxlength="300" placeholder="No mushrooms, mild spice for the kids..." autocomplete="off">
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>How long</legend>
-            <div class="row">
+          <!-- The basics: enough to make a first plan. Everything else has a sensible default. -->
+          <fieldset class="basics">
+            <legend class="sr-only">The basics</legend>
+            <div class="basics-row">
+              <div class="field">
+                <label for="household-size">How many people</label>
+                <input type="number" id="household-size" min="1" max="20" inputmode="numeric">
+              </div>
               <div class="field">
                 <span class="field-label" id="length-label">Plan length</span>
                 <div class="segmented" role="radiogroup" aria-labelledby="length-label">
@@ -75,6 +63,28 @@
                 <label for="start">Starts on</label>
                 <input type="date" id="start">
               </div>
+            </div>
+            <p class="help pantry-tip" id="pantry-tip" hidden>
+              Tip: add what's in your kitchen to <button type="button" class="link-btn" id="pantry-tip-link">My pantry</button> first and the plan will use it. Or skip it and plan now.
+            </p>
+          </fieldset>
+
+          <details class="more-options" id="more-options">
+            <summary>
+              <span class="more-title">More options</span>
+              <span class="more-what" id="more-what">Restrictions, which meals, cooking time, diet and more</span>
+            </summary>
+
+          <fieldset>
+            <legend>Who's eating</legend>
+            <p class="help">Everyone eats the same meals, so these restrictions apply to every meal.</p>
+            <div class="field">
+              <span class="field-label" id="restrictions-label">Restrictions</span>
+              <div class="chips" id="restrictions" role="group" aria-labelledby="restrictions-label"></div>
+            </div>
+            <div class="field">
+              <label for="restriction-notes">Other restrictions or foods to avoid (optional)</label>
+              <input type="text" id="restriction-notes" maxlength="300" placeholder="No mushrooms, mild spice for the kids..." autocomplete="off">
             </div>
           </fieldset>
 
@@ -142,6 +152,7 @@
             <p class="help">Press Like or Not for me on any recipe. Mise remembers them: dishes you didn't like (and very similar ones) won't come back, and the ones you liked can return now and then.</p>
             <div class="tastes" id="tastes"></div>
           </fieldset>
+          </details>
 
           <div class="form-actions">
             <button type="submit" class="btn primary" id="plan-button">Create meal plan</button>
@@ -249,7 +260,7 @@
     <div class="dialog-bar">
       <p class="dialog-when" id="dialog-title"></p>
       <div class="dialog-tools">
-        <button type="button" class="btn" id="swap-toggle" aria-expanded="false" aria-controls="swap-panel">Swap this meal</button>
+        <button type="button" class="btn" id="swap-toggle" aria-expanded="false" aria-controls="swap-panel">Swap<span class="swap-extra"> this meal</span></button>
         <button type="button" class="btn" id="dialog-close">Close</button>
       </div>
     </div>

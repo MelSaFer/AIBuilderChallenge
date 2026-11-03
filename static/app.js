@@ -713,16 +713,50 @@ function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+// A short message at the bottom. With an action ({ label, run }) it gets a button, such as
+// "Undo", and stays longer; it doesn't go away while the mouse or keyboard is on it.
 let toastTimer;
-function toast(message) {
+function toast(message, action = null) {
   const box = $("toast");
   // An open dialog covers the page, so show the message inside it.
   const host = document.querySelector("dialog[open]") || document.body;
   if (box.parentElement !== host) host.append(box);
-  box.textContent = message;
+  const text = el("span", { class: "toast-text", text: message });
+  if (action) {
+    const button = el("button", { type: "button", class: "toast-action", text: action.label });
+    button.addEventListener("click", () => {
+      hideToast();
+      action.run();
+    });
+    box.replaceChildren(text, button);
+  } else {
+    box.replaceChildren(text);
+  }
+  box.classList.toggle("has-action", Boolean(action));
   box.classList.add("show");
+  box.wait = action ? 8000 : 2800;
+  restartToastTimer();
+}
+function restartToastTimer() {
+  const box = $("toast");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => box.classList.remove("show"), 2800);
+  toastTimer = setTimeout(hideToast, box.wait || 2800);
+}
+function hideToast() {
+  const box = $("toast");
+  clearTimeout(toastTimer);
+  // Keep the keyboard on the page if it was on the toast's button.
+  if (box.contains(document.activeElement)) document.activeElement.blur();
+  box.classList.remove("show", "has-action");
+}
+function setupToast() {
+  const box = $("toast");
+  const hold = () => clearTimeout(toastTimer);
+  const resume = () => { if (box.classList.contains("show")) restartToastTimer(); };
+  box.addEventListener("mouseenter", hold);
+  box.addEventListener("mouseleave", resume);
+  box.addEventListener("focusin", hold);
+  box.addEventListener("focusout", resume);
 }
 
 function showMessage(id, text, isError = false) {
@@ -846,9 +880,11 @@ function pantry() {
 }
 // The hidden text box (#pantry-input) holds the pantry; the list is drawn from it.
 function savePantry() {
-  $("pantry-count").textContent = `${plural(pantry().length, "ingredient", "ingredients")} in your pantry`;
+  $("pantry-count").replaceChildren(plural(pantry().length, "ingredient", "ingredients"),
+    el("span", { class: "count-extra", text: " in your pantry" }));
   store.save("pantry", $("pantry-input").value);
   store.save("basics", $("basics").checked);
+  updatePantryTip();
   refreshRecipes();
 }
 function updatePantryCount() {
@@ -1094,16 +1130,21 @@ function setupPantry() {
     if (opening) $("pantry-input").focus();
   });
 
-  // On small screens the pantry sits above the page, so it can fold away.
+  // On small screens the pantry sits above the page as a slim bar, folded at first,
+  // so the page itself (logo, tabs, plan) is what you see when it opens.
   const aside = $("pantry");
   const toggle = $("pantry-toggle");
   const setOpen = (open) => {
     aside.classList.toggle("collapsed", !open);
     toggle.setAttribute("aria-expanded", String(open));
-    toggle.textContent = open ? "Hide" : "Show";
+    toggle.textContent = open ? "Hide" : pantry().length ? "Show" : "Add";
   };
-  toggle.addEventListener("click", () => setOpen(aside.classList.contains("collapsed")));
-  setOpen(pantry().length === 0);
+  toggle.addEventListener("click", () => {
+    const opening = aside.classList.contains("collapsed");
+    setOpen(opening);
+    if (opening && !pantry().length) $("pantry-add").focus(); // "Add" goes straight to the field
+  });
+  setOpen(false);
   openPantry = () => setOpen(true);
 
   updatePantryCount();
@@ -1614,7 +1655,7 @@ function renderTastes() {
   const list = (key, label) => {
     const items = settings[key];
     return el("div", { class: "taste-list" },
-      el("h4", { text: label }),
+      el("p", { class: "taste-list-title", text: label }),
       items.length
         ? el("ul", {}, ...[...items].reverse().map((title) => el("li", {},
             el("span", {}, title,
@@ -2003,7 +2044,7 @@ function renderShopping() {
       },
     }),
     el("button", {
-      class: "btn", type: "button", text: "Clear whole list",
+      class: "btn danger", type: "button", text: "Clear whole list",
       onclick: async () => {
         if (!(await askConfirm({
           title: "Clear the shopping list?",
@@ -2061,7 +2102,8 @@ function renderMealGrid() {
       const box = el("input", { type: "checkbox", "aria-label": `${meal} on ${day}` });
       box.checked = settings.meals[meal][i];
       box.addEventListener("change", () => { settings.meals[meal][i] = box.checked; saveSettings(); });
-      return el("td", {}, box);
+      // The whole cell is the target, so it's easy to hit with a thumb.
+      return el("td", {}, el("label", { class: "cell" }, box));
     }),
   ));
   table.replaceChildren(el("thead", {}, head), el("tbody", {}, ...rows));
@@ -2108,6 +2150,13 @@ function setupSettingsForm() {
 
   $("household-size").addEventListener("blur", () => { $("household-size").value = settings.servings; });
 
+  $("pantry-tip-link").addEventListener("click", () => {
+    openPantry();
+    const add = $("pantry-add");
+    add.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    add.focus({ preventScroll: true });
+  });
+
   $("plan-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     read();
@@ -2136,6 +2185,26 @@ function saveSettings() {
     `${plural(meals, "meal", "meals")} for ${plural(settings.servings, "person", "people")}`;
   const hasRules = settings.restrictions.length > 0 || settings.restrictionNotes.trim() !== "";
   document.querySelectorAll(".household-note").forEach((n) => (n.hidden = !hasRules));
+  $("more-what").textContent = moreOptionsText();
+}
+
+// Under "More options" while it's closed: what's chosen there, so nobody has to open it to check.
+// "Vegetarian, Nut-free · Mediterranean · 21 meals a week"
+function moreOptionsText() {
+  const parts = [];
+  const rules = [...settings.restrictions];
+  if (settings.restrictionNotes.trim()) rules.push("your notes");
+  if (rules.length) parts.push(rules.length > 3 ? `${rules.slice(0, 2).join(", ")} and ${rules.length - 2} more` : rules.join(", "));
+  const diet = settings.diet === "other" ? settings.dietOther.trim() : settings.diet;
+  if (diet) parts.push(diet);
+  const perWeek = MEALS.reduce((n, meal) => n + settings.meals[meal].filter(Boolean).length, 0);
+  parts.push(`${plural(perWeek, "meal", "meals")} a week`);
+  return parts.length > 1 ? parts.join(" · ") : `Restrictions, diet, cooking time · ${parts[0]}`;
+}
+
+// "Add your pantry first" shows only before the first plan, while the pantry is empty.
+function updatePantryTip() {
+  $("pantry-tip").hidden = Boolean(plan) || pantry().length > 0;
 }
 
 // Every meal to plan, in date order.
@@ -2333,6 +2402,7 @@ function addWeekToList(week, n) {
 
 function renderPlan() {
   const box = $("plan-result");
+  updatePantryTip();
   if (!plan) {
     box.replaceChildren();
     $("settings").open = true;
@@ -2615,21 +2685,59 @@ async function replaceMeal(meal, reason) {
     }
     const fresh = olds.map((m) => meals.find((x) => mealKey(x) === mealKey(m)));
     if (!fresh[0]) throw new Error("No new meal came back. Please try again.");
+    // What Undo needs: the old meals, their saved recipes, and the list as it was.
+    const listBefore = JSON.stringify(shopping);
+    const undo = [];
     olds.forEach((old, i) => {
       if (!fresh[i]) return;
+      const before = JSON.stringify(shopping);
       spots[i].week.meals[spots[i].index] = fresh[i];
+      undo.push({ old, fresh: fresh[i], recipe: planRecipes[mealKey(old)] });
       delete planRecipes[mealKey(old)];
       removeFromList(old);
+      undo[undo.length - 1].wasOnList = JSON.stringify(shopping) !== before;
     });
+    const listAfter = JSON.stringify(shopping);
     store.save("planRecipes", planRecipes);
     saveShopping();
     savePlan();
-    toast(fresh[1] ? `Swapped for ${fresh[0].title}, and the next day's lunch too` : `Swapped for ${fresh[0].title}`);
+    toast(fresh[1] ? `Swapped for ${fresh[0].title}, and the next day's lunch too` : `Swapped for ${fresh[0].title}`,
+      { label: "Undo", run: () => undoSwap(current, undo, listBefore, listAfter) });
     return fresh[0];
   } finally {
     olds.forEach((m) => swapping.delete(mealKey(m)));
     if (plan) renderPlan();
   }
+}
+
+// Puts the meals from before a swap back, with their recipes and shopping-list items.
+// No call to Claude: everything comes from what was saved at swap time.
+function undoSwap(swappedPlan, undo, listBefore, listAfter) {
+  if (plan !== swappedPlan) return toast("This plan was replaced, so the swap can't be undone.");
+  // Each new meal has to still be where the swap put it (not swapped again or cooked since).
+  const spots = undo.map((u) => findMeal(u.fresh));
+  if (spots.some((spot, i) => !spot || spot.week.meals[spot.index] !== undo[i].fresh || planRecipes[mealKey(undo[i].fresh)]?.cooked)) {
+    return toast("This meal changed again, so the swap can't be undone.");
+  }
+  // If nothing else touched the list since the swap, put it back exactly; otherwise add the old meals again.
+  const listUntouched = JSON.stringify(shopping) === listAfter;
+  undo.forEach((u, i) => {
+    removeFromList(u.fresh); // in case the new meal was added to the list meanwhile
+    spots[i].week.meals[spots[i].index] = u.old;
+    if (u.recipe) planRecipes[mealKey(u.old)] = u.recipe;
+    else delete planRecipes[mealKey(u.old)];
+  });
+  if (listUntouched) shopping = JSON.parse(listBefore);
+  else addMealsToList(undo.filter((u) => u.wasOnList).map((u) => u.old));
+  store.save("planRecipes", planRecipes);
+  saveShopping();
+  savePlan();
+  renderPlan();
+  // A meal dialog showing the new dish now shows the old one again.
+  const dialog = $("meal-dialog");
+  if (dialog.open && dialog.meal === undo[0].fresh) openMeal(undo[0].old);
+  else document.querySelector(`.meal-slot[data-key="${CSS.escape(mealKey(undo[0].old))}"] .meal-card`)?.focus();
+  toast(`${undo[0].old.title} is back`);
 }
 
 // The swap form inside the meal dialog.
@@ -2661,12 +2769,27 @@ function setupTabs() {
       $(t.getAttribute("aria-controls")).hidden = !on;
     }
     if (focus) tab.focus();
+    // On phones the tabs slide sideways: bring the chosen one into view.
+    tab.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
+  // Fade the edge that has more tabs past it (CSS uses these only on phones).
+  const bar = document.querySelector(".tabs");
+  const edges = () => {
+    bar.classList.toggle("more-left", bar.scrollLeft > 2);
+    bar.classList.toggle("more-right", bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2);
+  };
+  bar.addEventListener("scroll", edges, { passive: true });
+  addEventListener("resize", edges);
+  edges();
   tabs.forEach((tab, i) => {
     tab.addEventListener("click", () => select(tab));
     tab.addEventListener("keydown", (e) => {
       const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
       if (step) select(tabs[(i + step + tabs.length) % tabs.length]);
+      if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        select(e.key === "Home" ? tabs[0] : tabs[tabs.length - 1]);
+      }
     });
   });
 }
@@ -2724,6 +2847,7 @@ function setupForms() {
 
 // ---------- Start ----------
 async function start() {
+  setupToast();
   setupPantry();
   setupAccount();
   setupTabs();
