@@ -693,6 +693,26 @@ fieldset .check { margin-top: 0.75rem; }
   }
 }
 
+/* Read-only rows (the default): name on the left, amount on the right */
+.pantry-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.pantry-list-title { font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.95rem; }
+.pantry-list-head + .pantry-list { margin-top: 0.6rem; }
+.pantry-list .pantry-item.is-view {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name qty";
+  column-gap: 1rem;
+  min-height: 2.6rem;
+}
+.pi-qty { grid-area: qty; color: var(--muted); white-space: nowrap; text-align: right; }
+.link-btn[hidden] + .check { margin-top: 1.25rem; } /* "Edit as text" usually gives this space */
+#pantry-edit[aria-pressed="true"] { background: var(--marker); border-color: var(--marker); color: #FFFFFF; }
+
 .pantry-empty { margin: 1.25rem 0 0; color: var(--muted); font-size: 0.95rem; }
 
 .link-btn {

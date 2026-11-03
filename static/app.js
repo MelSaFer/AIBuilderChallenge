@@ -626,10 +626,42 @@ function stepFor(n, unit) {
   return 1;
 }
 
+// The pantry is a plain list until the user presses Edit.
+let pantryEditing = false;
+
 function renderPantryList() {
   const items = pantry().map(splitPantryLine);
-  $("pantry-empty").hidden = items.length > 0 || !$("pantry-text").hidden;
-  $("pantry-list").replaceChildren(...items.map((item, i) => pantryRow(item, i)));
+  const textOpen = !$("pantry-text").hidden;
+  $("pantry-empty").hidden = items.length > 0 || textOpen;
+  $("pantry-list-head").hidden = !items.length && !pantryEditing;
+  $("pantry-text-toggle").hidden = !pantryEditing;
+  $("pantry-list").classList.toggle("is-editing", pantryEditing);
+  $("pantry-list").replaceChildren(...items.map((item, i) => (pantryEditing ? pantryRow(item, i) : pantryView(item))));
+}
+
+// "1100 g" reads as "1.1 kg"; litres as "L" so they don't look like a capital I.
+function amountLabel(amount) {
+  if (!amount) return "";
+  const tidy = parseAmount(amount) ? addQuantities([amount]) : amount;
+  return tidy.replace(/(\d)\s*l$/i, "$1 L");
+}
+
+// A row you can only read: the name and how much there is.
+function pantryView(item) {
+  return el("li", { class: "pantry-item is-view" },
+    el("span", { class: "pi-name", text: item.name }),
+    el("span", { class: "pi-qty", text: amountLabel(item.amount) }),
+  );
+}
+
+function setPantryEditing(on) {
+  pantryEditing = on;
+  const button = $("pantry-edit");
+  button.textContent = on ? "Done" : "Edit";
+  button.setAttribute("aria-pressed", String(on));
+  // Leaving edit mode closes the text view too.
+  if (!on && !$("pantry-text").hidden) $("pantry-text-toggle").click();
+  renderPantryList();
 }
 
 function pantryRow(item, i) {
@@ -753,6 +785,8 @@ function setupPantry() {
       ? `Couldn't add the amounts for ${unclear.join(", ")}. Change them in the list.`
       : already === fresh.length ? "Already in your pantry" : "Added to your pantry");
   });
+
+  $("pantry-edit").addEventListener("click", () => setPantryEditing(!pantryEditing));
 
   const textToggle = $("pantry-text-toggle");
   textToggle.addEventListener("click", () => {
