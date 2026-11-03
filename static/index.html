@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=5">
-  <script src="/app.js?v=4" defer></script>
+  <link rel="stylesheet" href="/style.css?v=6">
+  <script src="/app.js?v=5" defer></script>
 </head>
 <body>
   <main>
@@ -257,10 +257,12 @@
 
   <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
     <div class="dialog-bar">
-      <p class="dialog-when" id="account-title">Your account</p>
+      <p class="dialog-when" id="account-title">Sign in</p>
       <button type="button" class="btn" id="account-close">Close</button>
     </div>
-    <form id="account-form" class="account-form">
+
+    <!-- Sign in or create an account -->
+    <form id="signin-form" class="account-form" data-view="signin" data-title="Sign in">
       <p class="help">Sign in to keep your pantry, plans, shopping list and favorite recipes on any device.</p>
       <div class="field">
         <label for="account-email-input">Email</label>
@@ -268,15 +270,95 @@
       </div>
       <div class="field">
         <label for="account-password">Password</label>
-        <input id="account-password" type="password" autocomplete="current-password" required minlength="6" maxlength="72" aria-describedby="account-password-help">
+        <div class="pw-row">
+          <input id="account-password" type="password" autocomplete="current-password" required minlength="6" maxlength="72" aria-describedby="account-password-help">
+          <button type="button" class="btn small pw-show" aria-controls="account-password" aria-pressed="false">Show</button>
+        </div>
         <p class="hint" id="account-password-help">At least 6 characters.</p>
       </div>
       <div class="form-actions">
         <button type="submit" class="btn primary" id="sign-in" value="in">Sign in</button>
         <button type="submit" class="btn" id="sign-up" value="up">Create account</button>
+        <button type="button" class="link-btn" id="forgot-link">Forgot password?</button>
       </div>
       <p class="message" id="account-message" role="status"></p>
     </form>
+
+    <!-- Forgot password: send a link -->
+    <form id="forgot-form" class="account-form" data-view="forgot" data-title="Reset your password" hidden>
+      <p class="help">Type your email and we'll send you a link to choose a new password.</p>
+      <div class="field">
+        <label for="forgot-email">Email</label>
+        <input id="forgot-email" type="email" autocomplete="email" required maxlength="254">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn primary" id="forgot-send">Send reset link</button>
+        <button type="button" class="link-btn" data-goto="signin">Back to sign in</button>
+      </div>
+      <p class="message" id="forgot-message" role="status"></p>
+    </form>
+
+    <!-- After opening the reset link: choose a new password -->
+    <form id="newpass-form" class="account-form" data-view="newpass" data-title="Choose a new password" hidden>
+      <p class="help">You're signed in from the email link. Choose a new password for <strong class="who"></strong>.</p>
+      <div class="field">
+        <label for="newpass-1">New password</label>
+        <div class="pw-row">
+          <input id="newpass-1" type="password" autocomplete="new-password" required minlength="6" maxlength="72">
+          <button type="button" class="btn small pw-show" aria-controls="newpass-1" aria-pressed="false">Show</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="newpass-2">Type it again</label>
+        <input id="newpass-2" type="password" autocomplete="new-password" required minlength="6" maxlength="72">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn primary" id="newpass-save">Save new password</button>
+      </div>
+      <p class="message" id="newpass-message" role="status"></p>
+    </form>
+
+    <!-- Signed in: the account panel -->
+    <div class="account-form" id="manage" data-view="manage" data-title="Your account" hidden>
+      <p class="account-who">Signed in as <strong class="who"></strong></p>
+
+      <form id="changepass-form" class="account-section" aria-labelledby="changepass-title">
+        <h3 id="changepass-title">Change password</h3>
+        <div class="field">
+          <label for="current-password">Current password</label>
+          <div class="pw-row">
+            <input id="current-password" type="password" autocomplete="current-password" required maxlength="72">
+            <button type="button" class="btn small pw-show" aria-controls="current-password" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="change-1">New password</label>
+          <div class="pw-row">
+            <input id="change-1" type="password" autocomplete="new-password" required minlength="6" maxlength="72">
+            <button type="button" class="btn small pw-show" aria-controls="change-1" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="change-2">Type it again</label>
+          <input id="change-2" type="password" autocomplete="new-password" required minlength="6" maxlength="72">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary" id="change-save">Change password</button>
+        </div>
+        <p class="message" id="change-message" role="status"></p>
+      </form>
+
+      <div class="account-section">
+        <button type="button" class="btn" id="sign-out">Sign out</button>
+      </div>
+
+      <details class="account-section danger-zone">
+        <summary>Delete account</summary>
+        <p class="help">This deletes your account and everything saved in it: pantry, plans, shopping list and favorites. It can't be undone.</p>
+        <button type="button" class="btn danger" id="delete-account">Delete my account</button>
+        <p class="message" id="delete-message" role="status"></p>
+      </details>
+    </div>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

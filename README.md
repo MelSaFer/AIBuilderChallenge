@@ -46,7 +46,11 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
-New users get an email to confirm their account. To skip that, turn off **Confirm email** in **Authentication > Sign In / Providers > Email**. If you keep it, set **Authentication > URL Configuration > Site URL** to the address of your app (for example `http://localhost:8000`) so the link in the email opens it.
+4. In **Authentication > URL Configuration**, set **Site URL** to the address of your app (for example `http://localhost:8000`) and add the same address under **Redirect URLs**. The links in "confirm your account" and "reset your password" emails open it.
+
+New users get an email to confirm their account. To skip that, turn off **Confirm email** in **Authentication > Sign In / Providers > Email**. Supabase's built-in email service only sends a few emails per hour; for more, set up your own email provider in **Authentication > Emails > SMTP Settings**.
+
+Signed-in users can change their password, reset a forgotten one by email, and delete their account (the `delete_my_account` function in `schema.sql`).
 
 ## Run
 

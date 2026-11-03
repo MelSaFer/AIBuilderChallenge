@@ -181,10 +181,22 @@ function autoReload() {
 // Runs after the page is drawn, so the account never slows down opening the app.
 async function cloudStart(config) {
   if (!config) return;
+  // An email link (confirm account, reset password) comes back with details after "#".
+  const link = new URLSearchParams(location.hash.slice(1));
+  if (link.get("type") === "recovery") sessionStorage.setItem("mise:recovery", "1");
   await loadScript(SUPABASE_JS);
   cloud.client = window.supabase.createClient(config.url, config.key);
   const { data } = await cloud.client.auth.getSession();
   cloud.user = data.session?.user || null;
+  if (link.get("error_description") || link.get("error")) {
+    history.replaceState(null, "", location.pathname);
+    const expired = /expired|invalid/i.test(link.get("error_description") || link.get("error_code") || "");
+    setTimeout(() => openAccount(expired
+      ? "That email link has expired or was already used. Ask for a new one."
+      : "That email link didn't work. Please try again.", true, expired ? "forgot" : "signin"), 0);
+  } else if (link.get("type") === "signup" && cloud.user) {
+    toast("Your email is confirmed. Welcome to Mise!");
+  }
   if (!cloud.user && store.load("owner", null)) {
     clearLocalData(); // the session ended: don't keep showing the last user's data
     if (autoReload()) return;
@@ -201,6 +213,7 @@ async function cloudStart(config) {
     if (document.visibilityState === "hidden") flushCloud();
   });
   if (!cloud.user) return;
+  if (sessionStorage.getItem("mise:recovery")) openAccount();
   await loadFavorites();
   try {
     // Another device changed something: show the account's copy.
@@ -213,15 +226,33 @@ async function cloudStart(config) {
 function renderAccount() {
   $("account").hidden = !cloud.client;
   $("account-email").textContent = cloud.user?.email || "";
-  $("account-button").textContent = cloud.user ? "Sign out" : "Sign in";
+  $("account-button").textContent = cloud.user ? "Account" : "Sign in";
+  document.querySelectorAll("#account-dialog .who").forEach((n) => { n.textContent = cloud.user?.email || ""; });
 }
 
-function openAccount(note = "") {
-  const message = $("account-message");
-  message.classList.remove("error");
-  message.textContent = note;
-  $("account-dialog").showModal();
-  $("account-email-input").focus();
+// The account dialog has four views: signin, forgot, newpass and manage (signed in).
+function showAccountView(view) {
+  const dialog = $("account-dialog");
+  for (const part of dialog.querySelectorAll("[data-view]")) part.hidden = part.dataset.view !== view;
+  const current = dialog.querySelector(`[data-view="${view}"]`);
+  $("account-title").textContent = current.dataset.title;
+  for (const m of current.querySelectorAll(".message")) { m.textContent = ""; m.classList.remove("error"); }
+  current.querySelector("input:not([type=hidden])")?.focus();
+  return current;
+}
+
+// Opens the dialog on the view that fits: a new password during a reset, the panel when signed in.
+function openAccount(note = "", isError = false, view = null) {
+  view ||= !cloud.user ? "signin" : sessionStorage.getItem("mise:recovery") ? "newpass" : "manage";
+  const dialog = $("account-dialog");
+  if (!dialog.open) dialog.showModal();
+  const current = showAccountView(view);
+  if (note) say(current.querySelector(".message"), note, isError);
+}
+
+function say(node, text, isError = false) {
+  node.textContent = text;
+  node.classList.toggle("error", isError);
 }
 
 function authMessage(error) {
@@ -229,59 +260,165 @@ function authMessage(error) {
   if (/invalid login credentials/i.test(text)) return "Wrong email or password.";
   if (/email not confirmed/i.test(text)) return "Confirm your email first: open the link we sent you, then sign in.";
   if (/already registered/i.test(text)) return "That email already has an account. Sign in instead.";
-  if (/rate limit|too many/i.test(text)) return "Too many tries. Wait a few minutes and try again.";
+  if (/rate limit|too many|security purposes/i.test(text)) return "Too many tries. Wait a few minutes and try again.";
+  if (/different from the old/i.test(text)) return "The new password has to be different from the old one.";
+  if (/weak|at least/i.test(text)) return "That password is too weak. Use at least 6 characters, mixing letters and numbers.";
+  if (/reauthenticat/i.test(text)) return "For safety, sign out and sign in again, then change your password.";
   if (/fetch|network/i.test(text)) return "Couldn't reach the server. Check your internet connection.";
   return text || "Something went wrong. Please try again.";
+}
+
+// Runs a form's work with its buttons turned off, showing errors in its message line.
+async function accountTask(form, message, work) {
+  const buttons = [...form.querySelectorAll("button")];
+  buttons.forEach((b) => { b.disabled = true; });
+  say(message, "");
+  try {
+    await work();
+  } catch (err) {
+    say(message, authMessage(err), true);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+function newPassword(a, b) {
+  if ($(a).value !== $(b).value) throw new Error("The two new passwords don't match.");
+  if ($(a).value.length < 6) throw new Error("Use at least 6 characters.");
+  return $(a).value;
+}
+
+async function signOutEverywhere() {
+  cloud.signingOut = true;
+  await flushCloud();
+  await cloud.client.auth.signOut().catch(() => {});
+  sessionStorage.removeItem("mise:recovery");
+  clearLocalData();
+  location.reload();
 }
 
 function setupAccount() {
   const dialog = $("account-dialog");
   $("account-close").addEventListener("click", () => dialog.close());
   dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+  $("account-button").addEventListener("click", () => { if (cloud.client) openAccount(); });
 
-  $("account-button").addEventListener("click", async () => {
-    if (!cloud.client) return;
-    if (!cloud.user) return openAccount();
-    $("account-button").disabled = true;
-    cloud.signingOut = true;
-    await flushCloud();
-    await cloud.client.auth.signOut();
-    clearLocalData();
-    location.reload();
+  // "Show" next to a password field
+  for (const button of dialog.querySelectorAll(".pw-show")) {
+    button.addEventListener("click", () => {
+      const input = $(button.getAttribute("aria-controls"));
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      button.textContent = show ? "Hide" : "Show";
+      button.setAttribute("aria-pressed", String(show));
+      button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    });
+    button.setAttribute("aria-label", "Show password");
+  }
+  for (const link of dialog.querySelectorAll("[data-goto]")) {
+    link.addEventListener("click", () => showAccountView(link.dataset.goto));
+  }
+  $("forgot-link").addEventListener("click", () => {
+    const email = $("account-email-input").value.trim();
+    showAccountView("forgot");
+    if (email) $("forgot-email").value = email;
   });
 
-  $("account-form").addEventListener("submit", async (e) => {
+  // Sign in or create an account
+  $("signin-form").addEventListener("submit", (e) => {
     e.preventDefault();
+    const form = e.currentTarget;
     const signUp = e.submitter?.value === "up";
     const email = $("account-email-input").value.trim();
     const password = $("account-password").value;
     const message = $("account-message");
-    const buttons = [$("sign-in"), $("sign-up")];
-    buttons.forEach((b) => { b.disabled = true; });
-    message.classList.remove("error");
-    message.textContent = signUp ? "Creating your account..." : "Signing in...";
-    try {
+    accountTask(form, message, async () => {
+      say(message, signUp ? "Creating your account..." : "Signing in...");
       const { data, error } = signUp
         ? await cloud.client.auth.signUp({ email, password, options: { emailRedirectTo: location.origin } })
         : await cloud.client.auth.signInWithPassword({ email, password });
       if (error) throw error;
       if (signUp && !data.session) {
         // The project asks new users to confirm their email (or the address is taken; Supabase doesn't say).
-        message.textContent = data.user?.identities?.length === 0
+        say(message, data.user?.identities?.length === 0
           ? "That email already has an account. Sign in instead."
-          : "Check your email and open the link to confirm your account. Then sign in here.";
+          : "Check your email and open the link to confirm your account. Then sign in here.");
         return;
       }
       cloud.user = data.user;
-      message.textContent = "Loading your saved data...";
+      say(message, "Loading your saved data...");
       await pullAll();
       location.reload();
-    } catch (err) {
-      message.textContent = authMessage(err);
-      message.classList.add("error");
-    } finally {
-      buttons.forEach((b) => { b.disabled = false; });
+    });
+  });
+
+  // Forgot password: Supabase emails a link back to this page.
+  $("forgot-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const message = $("forgot-message");
+    accountTask(e.currentTarget, message, async () => {
+      const { error } = await cloud.client.auth.resetPasswordForEmail($("forgot-email").value.trim(), {
+        redirectTo: location.origin,
+      });
+      if (error) throw error;
+      // Same answer whether or not the account exists, so nobody can check who has one.
+      say(message, "If there's an account for that email, a link to reset the password is on its way. Check your inbox and spam folder.");
+    });
+  });
+
+  // New password, after opening the reset link
+  $("newpass-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    accountTask(form, $("newpass-message"), async () => {
+      const password = newPassword("newpass-1", "newpass-2");
+      const { error } = await cloud.client.auth.updateUser({ password });
+      if (error) throw error;
+      sessionStorage.removeItem("mise:recovery");
+      form.reset();
+      dialog.close();
+      toast("Your new password is saved");
+    });
+  });
+
+  // Change password: check the current one first, so nobody at an open computer can change it.
+  $("changepass-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const message = $("change-message");
+    accountTask(form, message, async () => {
+      const password = newPassword("change-1", "change-2");
+      const check = await cloud.client.auth.signInWithPassword({ email: cloud.user.email, password: $("current-password").value });
+      if (check.error) throw new Error(/invalid login/i.test(check.error.message) ? "Your current password isn't right." : check.error.message);
+      const { error } = await cloud.client.auth.updateUser({ password });
+      if (error) throw error;
+      form.reset();
+      say(message, "Password changed.");
+    });
+  });
+
+  $("sign-out").addEventListener("click", () => {
+    $("sign-out").disabled = true;
+    signOutEverywhere();
+  });
+
+  // Delete account: a database function removes the user; their rows go with them.
+  $("delete-account").addEventListener("click", async () => {
+    const message = $("delete-message");
+    if (!confirm(`Delete the account ${cloud.user.email} and everything saved in it? This can't be undone.`)) return;
+    $("delete-account").disabled = true;
+    say(message, "Deleting...");
+    const { error } = await cloud.client.rpc("delete_my_account");
+    if (error) {
+      $("delete-account").disabled = false;
+      say(message, /could not find|does not exist|PGRST202/i.test(`${error.message} ${error.code}`)
+        ? "Deleting accounts isn't set up on this server yet."
+        : authMessage(error), true);
+      return;
     }
+    cloud.user = null; // nothing left to save
+    toast("Your account was deleted");
+    await signOutEverywhere();
   });
 }
 

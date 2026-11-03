@@ -46,3 +46,22 @@ create policy "Own favorites: delete" on public.favorites for delete to authenti
 
 revoke all on public.user_data, public.favorites from anon;
 grant select, insert, update, delete on public.user_data, public.favorites to authenticated;
+
+-- "Delete account": a signed-in user can delete only their own account.
+-- Their rows in user_data and favorites go with it (on delete cascade).
+create or replace function public.delete_my_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
