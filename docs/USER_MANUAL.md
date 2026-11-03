@@ -63,7 +63,7 @@ The pantry shows a plain list, so nothing changes by accident. To edit it:
 3. Press **✕** to remove an ingredient.
 4. Press **Done** when you finish.
 
-While editing, **Edit as text** opens the whole pantry as text, one ingredient per line. It's the quickest way to paste a long list.
+While editing, **Edit as text** (next to **Done**) opens the whole pantry as text, one ingredient per line. It's the quickest way to paste a long list. Press **Back to list** to return to the rows.
 
 ### I have basics
 
@@ -92,6 +92,8 @@ Open **Plan settings** at the top of the **Meal plan** tab. Your choices are sav
 - **Repeat favorites**: a breakfast or lunch can come back on other days, which keeps the shopping list short. Dinners always vary.
 
 **Anything else**: free-text requirements, like "packable lunches" or "Mexican food on Fridays".
+
+**Your tastes**: the dishes you marked **Like** or **Not for me** in any recipe. Press **✕** next to one to forget it.
 
 Press **Create meal plan** when you're ready. If you already have a plan, Mise asks before replacing it.
 
@@ -124,6 +126,7 @@ A recipe shows the time, the servings, the ingredients and numbered steps.
 - **Cooked it**: takes the amounts the recipe used out of your pantry and tells you what changed. Ingredients without an amount, or measured differently ("1 head" of garlic vs. "3 cloves"), are left for you to check by hand.
 - **Undo cooked**: puts the pantry back as it was, except anything you've changed since.
 - **♡ Save to favorites**: keeps the recipe in the **Favorites** tab (you need an account).
+- **Like** and **Not for me**: tell Mise what you thought of the dish. Future plans, **What can I cook?** and **Create a recipe** take it into account: dishes you didn't like (and very similar ones) don't come back, and the ones you liked can return now and then. Press the same button again to undo. After **Not for me**, Mise asks **What didn't you like?**: tap any reasons that apply (too spicy, too bland, took too long, too heavy, an ingredient, not my kind of dish), add a few words if you like, and press **Save**, or **Skip**. The reason helps future plans avoid what you didn't like, not just that one dish. You can see and remove them in **Plan settings > Your tastes**.
 
 ## 7. Ask while you cook
 

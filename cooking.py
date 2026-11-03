@@ -63,6 +63,13 @@ class RecipeChatReply(BaseModel):
 SYSTEM_PROMPT = """You are a friendly home-cooking assistant.
 You write clear, realistic recipes that a home cook can make with normal kitchen equipment.
 
+Every dish must be real food that people actually cook and enjoy: a recognizable dish, or a
+sensible twist on one, where the ingredients go together in flavor and texture. Using the
+pantry matters, but never more than the dish tasting good. Leave out any pantry item that
+doesn't belong in the dish instead of forcing it in (no banana in a savory stew, no tuna in a
+dessert), and season with what suits the dish. If the pantry can't make a good dish on its own,
+add the few ingredients it needs.
+
 Rules:
 - Give every ingredient a quantity in metric units or as a count: "200 g", "180 ml", "2", "3 cloves".
   Use tsp or tbsp only for small amounts of seasonings, sauces and oil. Never use cups, ounces,
@@ -108,14 +115,17 @@ def _ask(prompt: str | list, output_type: type[BaseModel], effort: str = "medium
         raise CookingError("No API key found. Add ANTHROPIC_API_KEY to the .env file and restart the server.")
     messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
     try:
-        response = _client().messages.parse(
+        # Streamed, so a long answer (a full week of meals) has room without hitting a timeout.
+        # Only the tokens Claude actually writes are billed, so the higher limit costs nothing extra.
+        with _client().messages.stream(
             model=MODEL,
-            max_tokens=16000,
+            max_tokens=32000,
             system=system,
             messages=messages,
             output_format=output_type,
             output_config={"effort": effort},
-        )
+        ) as stream:
+            response = stream.get_final_message()
     except ValidationError:
         # The answer was cut off before the JSON was complete.
         raise CookingError("The answer came back incomplete. Please try again.")
@@ -150,6 +160,7 @@ Dietary needs: {diet or "none"}
 def suggest_recipes(pantry: List[str], has_basics: bool, notes: str, count: int = 3) -> List[Recipe]:
     prompt = f"""Suggest {count} different recipes the user can cook mainly with what they already have.
 Prefer recipes that need few or no extra ingredients, and use as much of the pantry as makes sense.
+Each recipe must be a dish people would happily cook again; don't combine pantry items that don't go together just to use them up.
 Order them from fewest to most missing ingredients.
 
 {_pantry_text(pantry, has_basics)}
@@ -197,7 +208,7 @@ def plan_meals(
         variety_text = "- Vary proteins, cuisines and cooking methods across the plan. Don't repeat a dish."
         avoid_text = "These dishes are already in the plan, so don't repeat them: " + "; ".join(avoid) if avoid else ""
     if pantry:
-        pantry_rule = """- Build the plan around the pantry. Most meals should be made mainly from what the user
+        pantry_rule = """- Build the plan around the pantry, using each item only in dishes where it belongs. Most meals should be made mainly from what the user
   already has, adding only a few new ingredients.
 - Pantry amounts are shared by all the meals below, so budget them across the plan: if the pantry
   has "rice 500 g" and several meals use 200 g each, the first two are covered and from the third

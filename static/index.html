@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=8">
-  <script src="/app.js?v=7" defer></script>
+  <link rel="stylesheet" href="/style.css?v=14">
+  <script src="/app.js?v=13" defer></script>
 </head>
 <body>
   <main>
@@ -137,6 +137,12 @@
             </div>
           </fieldset>
 
+          <fieldset>
+            <legend>Your tastes</legend>
+            <p class="help">Press Like or Not for me on any recipe. Mise remembers them: dishes you didn't like (and very similar ones) won't come back, and the ones you liked can return now and then.</p>
+            <div class="tastes" id="tastes"></div>
+          </fieldset>
+
           <div class="form-actions">
             <button type="submit" class="btn primary" id="plan-button">Create meal plan</button>
             <span class="help" id="plan-summary"></span>
@@ -217,7 +223,10 @@
 
       <div class="pantry-list-head" id="pantry-list-head">
         <span class="pantry-list-title">What you have</span>
-        <button type="button" class="btn small" id="pantry-edit" aria-pressed="false" aria-controls="pantry-list">Edit</button>
+        <div class="pantry-list-tools">
+          <button type="button" class="link-btn" id="pantry-text-toggle" aria-expanded="false" aria-controls="pantry-text" hidden>Edit as text</button>
+          <button type="button" class="btn small" id="pantry-edit" aria-pressed="false" aria-controls="pantry-list">Edit</button>
+        </div>
       </div>
       <ul class="pantry-list" id="pantry-list" aria-label="Ingredients in your pantry"></ul>
       <p class="pantry-empty" id="pantry-empty">Your pantry is empty. Add what's in your kitchen and plans will use it first.</p>
@@ -227,7 +236,6 @@
         <textarea id="pantry-input" rows="10" placeholder="eggs 12&#10;rice 1 kg&#10;chicken breast 500 g&#10;tomatoes, onion, garlic"></textarea>
         <p class="hint">One per line or separated by commas. Good for pasting a long list.</p>
       </div>
-      <button type="button" class="link-btn" id="pantry-text-toggle" aria-expanded="false" aria-controls="pantry-text">Edit as text</button>
 
       <label class="check">
         <input type="checkbox" id="basics" checked>
@@ -359,6 +367,17 @@
         <p class="message" id="delete-message" role="status"></p>
       </details>
     </div>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+    <form method="dialog" class="confirm-body">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text"></p>
+      <div class="confirm-actions">
+        <button type="submit" class="btn" id="confirm-cancel" value="cancel">Cancel</button>
+        <button type="submit" class="btn primary" id="confirm-ok" value="ok">OK</button>
+      </div>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

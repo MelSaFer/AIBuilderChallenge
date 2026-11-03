@@ -21,7 +21,7 @@ from cooking import (
     chat_recipe, create_recipe, plan_meals, plan_recipe, suggest_recipes,
 )
 
-load_dotenv()
+load_dotenv(override=True)
 
 STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="Mise")
@@ -55,6 +55,8 @@ class PantryInfo(BaseModel):
     has_basics: bool = True
     people: List[Person] = Field(default_factory=list, max_length=12)
     household_size: int | None = Field(default=None, ge=1, le=20)  # how many eat; else one per person
+    likes: List[Title] = Field(default_factory=list, max_length=50)  # dishes the household enjoyed
+    dislikes: List[Title] = Field(default_factory=list, max_length=50)  # dishes they didn't
 
 
 class CreateRequest(PantryInfo):
@@ -183,6 +185,20 @@ def household_text(people: List[Person]) -> str:
     return "\n".join(lines) or "- No restrictions."
 
 
+def tastes_text(body: PantryInfo) -> str:
+    """What the household thought of earlier dishes, as a short note for Claude (the newest 30 of each)."""
+    likes = [t.strip() for t in body.likes if t.strip()][-30:]
+    dislikes = [t.strip() for t in body.dislikes if t.strip()][-30:]
+    lines = []
+    if likes:
+        lines.append("Dishes they liked (they can come back now and then, and similar ideas are welcome): " + "; ".join(likes))
+    if dislikes:
+        lines.append("Dishes they didn't like, with their reason in brackets when they gave one "
+                     "(don't suggest these dishes or very similar ones, and avoid what the reasons describe): "
+                     + "; ".join(dislikes))
+    return "\n".join(lines)
+
+
 def household_size(body: PantryInfo) -> int:
     return body.household_size or max(1, len(body.people))
 
@@ -223,6 +239,7 @@ def api_recipe(body: CreateRequest):
     diet = body.diet
     if has_restrictions(body.people):
         diet = f"{diet}\nEveryone eating has these restrictions:\n{household_text(body.people)}".strip()
+    diet = f"{diet}\n{tastes_text(body)}".strip()
     try:
         recipe: Recipe = create_recipe(body.request, body.servings, diet, body.pantry, body.has_basics)
     except CookingError as e:
@@ -237,6 +254,7 @@ def api_suggest(body: SuggestRequest):
     notes = body.notes
     if has_restrictions(body.people):
         notes = f"{notes}\nEveryone eating has these restrictions:\n{household_text(body.people)}".strip()
+    notes = f"{notes}\n{tastes_text(body)}".strip()
     try:
         recipes = suggest_recipes(body.pantry, body.has_basics, notes)
     except CookingError as e:
@@ -252,7 +270,7 @@ def api_plan(body: PlanRequest):
             household_text(body.people),
             household_size(body),
             body.diet,
-            body.requirements,
+            f"{body.requirements}\n{tastes_text(body)}".strip(),
             body.leftovers,
             body.pantry,
             body.has_basics,

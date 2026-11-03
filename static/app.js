@@ -168,6 +168,23 @@ function loadScript(src) {
   });
 }
 
+// Asks before something that can't be undone easily. Resolves to true if the person agrees.
+// Cancel, Escape and a click outside all mean no.
+function askConfirm({ title, text, ok = "OK", danger = false }) {
+  const dialog = $("confirm-dialog");
+  $("confirm-title").textContent = title;
+  $("confirm-text").textContent = text;
+  const okButton = $("confirm-ok");
+  okButton.textContent = ok;
+  okButton.className = danger ? "btn danger-solid" : "btn primary";
+  dialog.returnValue = "";
+  dialog.showModal();
+  $("confirm-cancel").focus(); // the safe choice is the default
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true });
+  });
+}
+
 // Closes a dialog when you click the dark area around it. A click that starts inside
 // (like selecting text in a field and letting go outside) doesn't count.
 function closeOnOutsideClick(dialog) {
@@ -317,6 +334,7 @@ async function signOutEverywhere() {
 }
 
 function setupAccount() {
+  closeOnOutsideClick($("confirm-dialog"));
   const dialog = $("account-dialog");
   $("account-close").addEventListener("click", () => dialog.close());
   closeOnOutsideClick(dialog);
@@ -429,7 +447,11 @@ function setupAccount() {
   // Delete account: a database function removes the user; their rows go with them.
   $("delete-account").addEventListener("click", async () => {
     const message = $("delete-message");
-    if (!confirm(`Delete the account ${cloud.user.email} and everything saved in it? This can't be undone.`)) return;
+    if (!(await askConfirm({
+      title: "Delete your account?",
+      text: `This deletes ${cloud.user.email} and everything saved in it: pantry, plans, shopping list and favorites. It can't be undone.`,
+      ok: "Delete account", danger: true,
+    }))) return;
     $("delete-account").disabled = true;
     say(message, "Deleting...");
     const { error } = await cloud.client.rpc("delete_my_account");
@@ -545,6 +567,9 @@ function defaultSettings() {
     servings: 2, // how many people eat
     restrictions: [], // apply to every meal
     restrictionNotes: "",
+    likes: [], // titles of dishes they liked
+    dislikes: [], // and didn't
+    dislikeNotes: {}, // why they didn't, by title (optional)
     length: 7,
     start: isoDate(new Date()),
     meals: { Breakfast: allDays(), Lunch: allDays(), Dinner: allDays() },
@@ -588,6 +613,13 @@ function cleanSettings(saved) {
   out.servings = Math.min(20, Math.max(1, Math.round(Number(out.servings)) || d.servings));
   out.restrictions = Array.isArray(out.restrictions) ? out.restrictions.filter((r) => typeof r === "string").slice(0, 30) : [];
   out.restrictionNotes = typeof out.restrictionNotes === "string" ? out.restrictionNotes.slice(0, 300) : "";
+  for (const k of ["likes", "dislikes"]) {
+    out[k] = Array.isArray(out[k]) ? [...new Set(out[k].filter((t) => typeof t === "string" && t.trim()).map((t) => t.slice(0, 200)))].slice(-50) : [];
+  }
+  const notes = isObject(out.dislikeNotes) ? out.dislikeNotes : {};
+  out.dislikeNotes = Object.fromEntries(out.dislikes
+    .filter((t) => typeof notes[t] === "string" && notes[t].trim())
+    .map((t) => [t, notes[t].trim().slice(0, 120)]));
   for (const k of ["weekdayMinutes", "weekendMinutes"]) if (!MINUTES.includes(Number(out[k]))) out[k] = d[k];
   for (const k of ["relaxed", "leftovers", "repeats"]) if (typeof out[k] !== "boolean") out[k] = d[k];
   for (const k of ["diet", "dietOther", "requirements"]) if (typeof out[k] !== "string") out[k] = "";
@@ -1026,7 +1058,7 @@ function setupPantry() {
     $("pantry-text").hidden = !opening;
     $("pantry-list").hidden = opening;
     $("pantry-add-form").hidden = opening;
-    textToggle.textContent = opening ? "Done editing text" : "Edit as text";
+    textToggle.textContent = opening ? "Back to list" : "Edit as text";
     textToggle.setAttribute("aria-expanded", String(opening));
     updatePantryCount();
     if (opening) $("pantry-input").focus();
@@ -1244,7 +1276,10 @@ function cookedSummary({ updated, usedUp, unchanged }) {
 function kitchen(cfg = settings) {
   // The server reads restrictions as a list of people; the whole household is one entry.
   const people = [{ name: "Everyone", restrictions: cfg.restrictions, notes: cfg.restrictionNotes }];
-  return { pantry: pantry(), has_basics: $("basics").checked, people, household_size: cfg.servings };
+  return { pantry: pantry(), has_basics: $("basics").checked, people, household_size: cfg.servings,
+           likes: settings.likes,
+           // "Okra Stew (too slimy)"; the server takes up to 200 characters per dish
+           dislikes: settings.dislikes.map((t) => (settings.dislikeNotes[t] ? `${t} (${settings.dislikeNotes[t]})` : t).slice(0, 200)) };
 }
 
 // ---------- Talking to the server ----------
@@ -1368,7 +1403,7 @@ function recipeCard(recipe, sourceId = recipe.title) {
   const action = recipe.steps.length
     ? el("div", {},
         allSet,
-        el("div", { class: "recipe-actions" }, addButton, cookedButton, undoButton, favoriteButton(recipe)),
+        el("div", { class: "recipe-actions" }, addButton, cookedButton, undoButton, favoriteButton(recipe), ...tasteButtons(recipe)),
         cookedNote,
       )
     : null;
@@ -1390,6 +1425,135 @@ function recipeCard(recipe, sourceId = recipe.title) {
   );
   card.refresh = draw;
   return card;
+}
+
+// ---------- Likes and dislikes: Mise remembers them for future plans and ideas ----------
+function tasteOf(title) {
+  if (settings.likes.includes(title)) return "like";
+  if (settings.dislikes.includes(title)) return "dislike";
+  return null;
+}
+
+function setTaste(title, taste) {
+  settings.likes = settings.likes.filter((t) => t !== title);
+  settings.dislikes = settings.dislikes.filter((t) => t !== title);
+  delete settings.dislikeNotes[title];
+  if (taste === "like") settings.likes = [...settings.likes, title].slice(-50);
+  if (taste === "dislike") settings.dislikes = [...settings.dislikes, title].slice(-50);
+  saveSettings();
+  renderTastes();
+  document.querySelectorAll(".taste").forEach((group) => group.update?.());
+}
+
+// A thumb (up, or turned upside down with CSS for "not for me").
+function thumbIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ["M7 10v11H3V10h4z", "M7 10l4-7a2 2 0 0 1 2 2v4h5.6a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 17.3 21H7"]) {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+const DISLIKE_REASONS = ["Too spicy", "Too bland", "Took too long", "Too heavy", "An ingredient", "Not my kind of dish"];
+
+// "What didn't you like?": quick reasons and a few words of your own. All optional.
+function reasonPanel(recipe, done) {
+  const picked = new Set();
+  const chips = el("div", { class: "chips", role: "group", "aria-label": "Reasons" }, ...DISLIKE_REASONS.map((r) => {
+    const box = el("input", { type: "checkbox" });
+    box.addEventListener("change", () => {
+      if (box.checked) picked.add(r); else picked.delete(r);
+      if (r === "An ingredient" && box.checked) input.focus();
+    });
+    return el("label", { class: "chip" }, box, el("span", { text: r }));
+  }));
+  const input = el("input", {
+    type: "text", maxlength: 100, autocomplete: "off", placeholder: "Which ingredient, or anything else (optional)",
+    "aria-label": "Anything else you didn't like",
+  });
+  const save = el("button", { class: "btn primary small", type: "submit", text: "Save" });
+  const skip = el("button", { class: "btn small", type: "button", text: "Skip" });
+  const form = el("form", { class: "reason-panel" },
+    el("p", { class: "reason-title", text: "What didn't you like?" }),
+    chips, input,
+    el("div", { class: "reason-actions" }, save, skip),
+  );
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const parts = [...picked].filter((r) => r !== "An ingredient" || !input.value.trim()).map((r) => r.toLowerCase());
+    if (input.value.trim()) parts.push(input.value.trim());
+    const note = parts.join(", ").slice(0, 120);
+    if (note) {
+      settings.dislikeNotes[recipe.title] = note;
+      saveSettings();
+      renderTastes();
+    }
+    done(note);
+  });
+  skip.addEventListener("click", () => done(""));
+  return form;
+}
+
+// Like / Not for me, plus the "why?" panel that opens after Not for me.
+// Returns both, so the panel can take the full width under the buttons.
+function tasteButtons(recipe) {
+  const like = el("button", { class: "btn taste-btn", type: "button" }, thumbIcon(), el("span", { text: "Like" }));
+  const dislike = el("button", { class: "btn taste-btn is-down", type: "button" }, thumbIcon(), el("span", { text: "Not for me" }));
+  const group = el("div", { class: "taste", role: "group", "aria-label": "Did you like this dish?" }, like, dislike);
+  const slot = el("div", { class: "reason-slot" });
+  const closePanel = () => slot.replaceChildren();
+  group.update = () => {
+    const taste = tasteOf(recipe.title);
+    like.setAttribute("aria-pressed", String(taste === "like"));
+    dislike.setAttribute("aria-pressed", String(taste === "dislike"));
+    if (taste !== "dislike") closePanel();
+  };
+  group.update();
+  like.addEventListener("click", () => {
+    const on = tasteOf(recipe.title) !== "like";
+    setTaste(recipe.title, on ? "like" : null);
+    toast(on ? "Glad you liked it. Mise will remember." : "Like removed");
+  });
+  dislike.addEventListener("click", () => {
+    const on = tasteOf(recipe.title) !== "dislike";
+    setTaste(recipe.title, on ? "dislike" : null);
+    if (!on) return toast("Removed from dishes you don't like");
+    const panel = reasonPanel(recipe, (note) => {
+      closePanel();
+      toast(note ? "Thanks. Future plans and ideas will keep that in mind." : "Noted. Future plans and ideas will skip it.");
+      dislike.focus();
+    });
+    slot.replaceChildren(panel);
+    panel.querySelector(".chip input").focus(); // a reason, not the text field: no keyboard pops up on phones
+  });
+  return [group, slot];
+}
+
+// The "Your tastes" part of Plan settings: what Mise remembers, with a way to take things back.
+function renderTastes() {
+  const list = (key, label) => {
+    const items = settings[key];
+    return el("div", { class: "taste-list" },
+      el("h4", { text: label }),
+      items.length
+        ? el("ul", {}, ...[...items].reverse().map((title) => el("li", {},
+            el("span", {}, title,
+              key === "dislikes" && settings.dislikeNotes[title]
+                ? el("small", { class: "taste-why", text: settings.dislikeNotes[title] })
+                : null),
+            el("button", {
+              type: "button", class: "pi-btn pi-remove", text: "✕", "aria-label": `Forget ${title}`,
+              onclick: () => { setTaste(title, null); toast(`Forgot ${title}`); },
+            }))))
+        : el("p", { class: "help", text: "Nothing yet." }),
+    );
+  };
+  $("tastes").replaceChildren(list("likes", "Liked"), list("dislikes", "Not for me"));
 }
 
 // ---------- Recipe chat: ask while you cook, or change the recipe ----------
@@ -1765,8 +1929,12 @@ function renderShopping() {
     }),
     el("button", {
       class: "btn", type: "button", text: "Clear whole list",
-      onclick: () => {
-        if (!confirm("Remove every item from your shopping list?")) return;
+      onclick: async () => {
+        if (!(await askConfirm({
+          title: "Clear the shopping list?",
+          text: "Every item comes off the list, including the ones you've ticked.",
+          ok: "Clear list", danger: true,
+        }))) return;
         shopping = {};
         saveShopping();
         toast("Shopping list cleared");
@@ -1865,18 +2033,23 @@ function setupSettingsForm() {
 
   $("household-size").addEventListener("blur", () => { $("household-size").value = settings.servings; });
 
-  $("plan-form").addEventListener("submit", (e) => {
+  $("plan-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     read();
     if (!buildSlots().length) {
       showMessage("plan-message", "Tick at least one meal in Which meals.", true);
       return;
     }
-    if (plan && !confirm("Replace your current meal plan with a new one?")) return;
+    if (plan && !(await askConfirm({
+      title: "Replace your meal plan?",
+      text: "Mise will make a new plan with these settings. Your current plan and its recipes will be replaced; your shopping list stays as it is.",
+      ok: "Replace plan",
+    }))) return;
     startNewPlan();
   });
 
   renderRestrictions();
+  renderTastes();
   renderMealGrid();
   saveSettings();
 }
@@ -1960,6 +2133,41 @@ function startNewPlan() {
 }
 
 // Plans the weeks that aren't done yet, one at a time, showing each as it arrives.
+// While a week is being planned, the message changes every few seconds so the wait feels alive.
+// It's only text on the page: Claude is asked exactly the same thing.
+const PLAN_STEPS = [
+  "Looking through your pantry...",
+  "Checking everyone's restrictions...",
+  "Choosing breakfasts...",
+  "Balancing lunches and dinners...",
+  "Fitting meals to your cooking time...",
+  "Keeping the shopping list short...",
+  "Adding a few new ideas...",
+  "Putting the week together...",
+];
+let planStep = 0;
+let planTicker = null;
+
+const planStepText = () => PLAN_STEPS[planStep % PLAN_STEPS.length];
+
+// The changing phrase shows inside the week being planned. Screen readers hear
+// "Planning week 1 of 4" once, not every phrase.
+function startPlanStatus(label) {
+  stopPlanStatus();
+  planStep = 0;
+  const box = $("plan-message");
+  box.classList.remove("error");
+  box.replaceChildren(el("span", { class: "sr-only", text: `Planning ${label.toLowerCase()}` }));
+  const draw = () => document.querySelector(".week-pending .planning-text")?.replaceChildren(...dotted(planStepText()));
+  draw();
+  planTicker = setInterval(() => { planStep++; draw(); }, 3500);
+}
+
+function stopPlanStatus() {
+  clearInterval(planTicker);
+  planTicker = null;
+}
+
 async function fillPlan() {
   if (planning || !plan) return;
   planning = true;
@@ -1975,7 +2183,7 @@ async function fillPlan() {
       const days = Math.round((parseDate(week.end) - parseDate(week.start)) / 86400000) + 1;
       const slots = buildSlots(week.start, days, planSettings());
       if (slots.length) {
-        showMessage("plan-message", `Planning week ${n + 1} of ${plan.weeks.length}...`);
+        startPlanStatus(`Week ${n + 1} of ${plan.weeks.length}`);
         let { meals } = await requestMeals(slots);
         if (plan !== current) return; // the plan was deleted or replaced meanwhile
         // Claude sometimes leaves a meal out: ask once more for just those.
@@ -1995,12 +2203,15 @@ async function fillPlan() {
       renderPlan();
     }
     const left = plan.weeks.reduce((sum, w) => sum + (w.missing?.length || 0), 0);
+    stopPlanStatus();
     showMessage("plan-message", "");
     toast(left ? `Your plan is ready, but ${plural(left, "meal", "meals")} couldn't be planned` : "Your meal plan is ready");
   } catch (err) {
+    stopPlanStatus();
     planError = err.message;
     showMessage("plan-message", err.message, true);
   } finally {
+    stopPlanStatus();
     planning = false;
     button.disabled = false;
     renderPlan();
@@ -2072,8 +2283,12 @@ function renderPlan() {
         : null,
       el("button", {
         class: "btn", type: "button", text: "Delete plan", disabled: planning,
-        onclick: () => {
-          if (!confirm("Delete this meal plan? Your shopping list stays as it is.")) return;
+        onclick: async () => {
+          if (!(await askConfirm({
+            title: "Delete this meal plan?",
+            text: "The plan and the recipes opened from it will be deleted. Your shopping list stays as it is.",
+            ok: "Delete plan", danger: true,
+          }))) return;
           plan = null;
           planRecipes = {};
           store.save("planRecipes", planRecipes);
@@ -2100,7 +2315,9 @@ function renderPlan() {
       const isNext = plan.weeks.findIndex((w) => !w.done) === n;
       return el("section", { class: "week" }, weekHead,
         el("div", { class: "week-pending" },
-          el("p", {}, ...dotted(planning && isNext ? "Planning this week..." : "Not planned yet.")),
+          planning && isNext
+            ? el("p", { class: "planning-text", "aria-hidden": "true" }, ...dotted(planStepText()))
+            : el("p", { text: "Not planned yet." }),
           !planning && isNext && planError ? el("p", { class: "message error", text: planError }) : null,
           !planning && isNext
             ? el("button", { class: "btn primary", type: "button", text: "Plan the remaining weeks", onclick: fillPlan })
