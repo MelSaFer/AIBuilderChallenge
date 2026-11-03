@@ -1073,7 +1073,24 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
 .account-form .form-actions .link-btn { margin: 0; }
 .pw-row { display: flex; gap: 0.5rem; align-items: stretch; }
 .pw-row input { flex: 1; min-width: 0; }
-.pw-show { flex: none; min-width: 4.25rem; }
+.pw-show {
+  flex: none;
+  width: 2.9rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.pw-show:hover { color: var(--ink); }
+.pw-show svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .account-who { margin: 0; overflow-wrap: anywhere; }
 .account-section { display: grid; gap: 0.9rem; padding-top: 1.25rem; border-top: 1px dashed var(--edge); }
 .account-section h3 { margin: 0; font-family: var(--display); font-stretch: 85%; font-weight: 750; font-size: 1.15rem; }
@@ -1089,3 +1106,24 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
 .danger-zone .btn { justify-self: start; }
 .btn.danger { color: var(--danger); border-color: var(--danger); }
 .btn.danger:hover:not(:disabled) { background: var(--danger); color: #FFFFFF; }
+
+/* Three dots that move like a wave while something loads */
+.dots { display: inline-block; margin-left: 0.3em; white-space: nowrap; }
+.dots i {
+  display: inline-block;
+  width: 0.34em;
+  height: 0.34em;
+  margin-right: 0.2em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot-wave 1.2s ease-in-out infinite;
+}
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; margin-right: 0; }
+@keyframes dot-wave {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-0.35em); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dots i { animation: none; opacity: 0.7; }
+}

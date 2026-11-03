@@ -168,6 +168,21 @@ function loadScript(src) {
   });
 }
 
+// Closes a dialog when you click the dark area around it. A click that starts inside
+// (like selecting text in a field and letting go outside) doesn't count.
+function closeOnOutsideClick(dialog) {
+  let startedOutside = false;
+  const outside = (e) => {
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  dialog.addEventListener("pointerdown", (e) => { startedOutside = e.target === dialog && outside(e); });
+  dialog.addEventListener("click", (e) => {
+    if (startedOutside && e.target === dialog && outside(e)) dialog.close();
+    startedOutside = false;
+  });
+}
+
 // Reloads the page by itself (not when the user signs in or out), at most once every 15 seconds,
 // so nothing can keep reloading it.
 function autoReload() {
@@ -213,6 +228,10 @@ async function cloudStart(config) {
     if (document.visibilityState === "hidden") flushCloud();
   });
   if (!cloud.user) return;
+  if (sessionStorage.getItem("mise:welcome")) {
+    sessionStorage.removeItem("mise:welcome");
+    toast(`Signed in as ${cloud.user.email}`);
+  }
   if (sessionStorage.getItem("mise:recovery")) openAccount();
   await loadFavorites();
   try {
@@ -251,7 +270,7 @@ function openAccount(note = "", isError = false, view = null) {
 }
 
 function say(node, text, isError = false) {
-  node.textContent = text;
+  node.replaceChildren(...(isError ? [text] : dotted(text)));
   node.classList.toggle("error", isError);
 }
 
@@ -300,20 +319,24 @@ async function signOutEverywhere() {
 function setupAccount() {
   const dialog = $("account-dialog");
   $("account-close").addEventListener("click", () => dialog.close());
-  dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+  closeOnOutsideClick(dialog);
   $("account-button").addEventListener("click", () => { if (cloud.client) openAccount(); });
 
-  // "Show" next to a password field
+  // The eye next to a password field: open while hidden (press to show), crossed out while shown.
   for (const button of dialog.querySelectorAll(".pw-show")) {
+    const draw = (shown) => {
+      const label = shown ? "Hide password" : "Show password";
+      button.replaceChildren(eyeIcon(shown));
+      button.setAttribute("aria-label", label);
+      button.title = label;
+    };
+    draw(false);
     button.addEventListener("click", () => {
       const input = $(button.getAttribute("aria-controls"));
       const show = input.type === "password";
       input.type = show ? "text" : "password";
-      button.textContent = show ? "Hide" : "Show";
-      button.setAttribute("aria-pressed", String(show));
-      button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      draw(show);
     });
-    button.setAttribute("aria-label", "Show password");
   }
   for (const link of dialog.querySelectorAll("[data-goto]")) {
     link.addEventListener("click", () => showAccountView(link.dataset.goto));
@@ -346,8 +369,9 @@ function setupAccount() {
         return;
       }
       cloud.user = data.user;
-      say(message, "Loading your saved data...");
+      say(message, "Signed in. Loading your saved data...");
       await pullAll();
+      sessionStorage.setItem("mise:welcome", "1");
       location.reload();
     });
   });
@@ -670,8 +694,34 @@ function toast(message) {
 
 function showMessage(id, text, isError = false) {
   const box = $(id);
-  box.textContent = text;
+  box.replaceChildren(...(isError ? [text] : dotted(text)));
   box.classList.toggle("error", isError);
+}
+
+// "Thinking..." -> "Thinking" followed by three dots that move while you wait.
+function dotted(text) {
+  if (!text.endsWith("...")) return [text];
+  const dots = el("span", { class: "dots", "aria-hidden": "true" }, el("i"), el("i"), el("i"));
+  return [text.slice(0, -3), dots];
+}
+
+// An eye (open, or crossed out) for the buttons that show or hide a password.
+function eyeIcon(crossed) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const shapes = [
+    ["path", { d: "M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" }],
+    ["circle", { cx: "12", cy: "12", r: "3" }],
+  ];
+  if (crossed) shapes.push(["path", { d: "M4 4l16 16" }]);
+  for (const [tag, attrs] of shapes) {
+    const shape = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) shape.setAttribute(k, v);
+    svg.append(shape);
+  }
+  return svg;
 }
 
 // ---------- Dates (always local time) ----------
@@ -1221,7 +1271,7 @@ async function withBusyButton(form, messageId, work) {
   const button = form.querySelector("button[type=submit]");
   const label = button.textContent;
   button.disabled = true;
-  button.textContent = button.dataset.busyLabel;
+  button.replaceChildren(...dotted(button.dataset.busyLabel));
   showMessage(messageId, "");
   try {
     await work();
@@ -1380,7 +1430,7 @@ function recipeChat(recipe, sourceId) {
         el("p", { text: m.content }),
         m.changed ? el("p", { class: "chat-changed", text: "✓ Recipe updated" }) : null,
       )),
-      chat.busy ? el("div", { class: "chat-msg is-assistant is-thinking" }, el("p", { text: "Thinking..." })) : "",
+      chat.busy ? el("div", { class: "chat-msg is-assistant is-thinking" }, el("p", {}, ...dotted("Thinking..."))) : "",
       chat.error ? el("p", { class: "message error", text: chat.error }) : "",
     );
     log.hidden = !log.childElementCount;
@@ -2050,7 +2100,7 @@ function renderPlan() {
       const isNext = plan.weeks.findIndex((w) => !w.done) === n;
       return el("section", { class: "week" }, weekHead,
         el("div", { class: "week-pending" },
-          el("p", { text: planning && isNext ? "Planning this week..." : "Not planned yet." }),
+          el("p", {}, ...dotted(planning && isNext ? "Planning this week..." : "Not planned yet.")),
           !planning && isNext && planError ? el("p", { class: "message error", text: planError }) : null,
           !planning && isNext
             ? el("button", { class: "btn primary", type: "button", text: "Plan the remaining weeks", onclick: fillPlan })
@@ -2122,7 +2172,7 @@ function mealCard(meal) {
     onclick: () => openMeal(meal),
   },
     el("span", { class: "which", text: meal.meal }),
-    el("span", { class: "title", text: busy ? "Finding another meal..." : meal.title }),
+    el("span", { class: "title" }, ...(busy ? dotted("Finding another meal...") : [meal.title])),
     el("span", { class: "facts" },
       `${meal.total_time_minutes} min`,
       toBuy ? ", " : ", nothing to buy",
@@ -2179,7 +2229,7 @@ async function openMeal(meal) {
 
   // Show what we already know while Claude writes the steps.
   const preview = recipeCard({ ...meal, servings: plan?.servings || 1, steps: [] }, key);
-  preview.querySelector(".steps").replaceWith(el("p", { class: "loading-note", text: "Writing the steps..." }));
+  preview.querySelector(".steps").replaceWith(el("p", { class: "loading-note" }, ...dotted("Writing the steps...")));
   body.replaceChildren(preview);
   if (!dialog.open) dialog.showModal();
 
@@ -2205,7 +2255,7 @@ async function openMeal(meal) {
 function setupDialog() {
   const dialog = $("meal-dialog");
   $("dialog-close").addEventListener("click", () => dialog.close());
-  dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+  closeOnOutsideClick(dialog);
 
   $("swap-toggle").addEventListener("click", () => {
     const panel = $("swap-panel");
@@ -2296,7 +2346,7 @@ async function swapMeal(meal, reason) {
   const message = $("swap-message");
   button.disabled = true;
   message.classList.remove("error");
-  message.textContent = "Finding something else...";
+  message.replaceChildren(...dotted("Finding something else..."));
   try {
     const fresh = await replaceMeal(meal, reason);
     if ($("meal-dialog").open) openMeal(fresh);
