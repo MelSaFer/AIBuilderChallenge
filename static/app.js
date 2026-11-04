@@ -945,11 +945,18 @@ function renderPantryList() {
   const textOpen = !$("pantry-text").hidden;
   $("pantry-empty").hidden = items.length > 0 || textOpen;
   $("pantry-list-head").hidden = !items.length && !pantryEditing;
-  $("pantry-text-toggle").hidden = !pantryEditing;
+  $("pantry-list-tools").hidden = !pantryEditing;
   $("pantry-list").classList.toggle("is-editing", pantryEditing);
   // Rows keep their place in the whole pantry (i), so editing a filtered row changes the right line.
   const shown = items.map((item, i) => [item, i]).filter(([item]) => !pantryQuery || matchesQuery(item.name, pantryQuery));
-  $("pantry-list").replaceChildren(...shown.map(([item, i]) => (pantryEditing ? pantryRow(item, i) : pantryView(item))));
+  $("pantry-list").replaceChildren(...shown.map(([item, i]) => {
+    const row = pantryEditing ? pantryRow(item, i) : pantryView(item);
+    row.dataset.i = i;
+    return row;
+  }));
+  // While editing, adding happens from the floating bar ("+ Add"), not the field at the top.
+  $("pantry-add-btn").hidden = textOpen;
+  $("pantry-add-form").hidden = pantryEditing || textOpen;
   const note = $("pantry-find-note");
   if (!pantryQuery || !items.length || textOpen) note.replaceChildren();
   else if (shown.length) note.replaceChildren(`You have ${plural(shown.length, "match", "matches")} for “${pantryQuery}”.`);
@@ -975,6 +982,58 @@ function pantryView(item) {
     el("span", { class: "pi-name", text: item.name }),
     el("span", { class: "pi-qty", text: amountLabel(item.amount) }),
   );
+}
+
+// Scroll to a row of the pantry list and flash it, so you see where what you added went.
+function revealPantryItem(i) {
+  const row = i >= 0 && $("pantry-list").querySelector(`[data-i="${i}"]`);
+  if (!row) return;
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  row.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+  row.classList.add("just-added");
+  setTimeout(() => row.classList.remove("just-added"), 2000);
+}
+
+// "+ Add" in the floating bar: an empty row at the end of the list, ready to type in.
+function startNewPantryRow() {
+  $("pantry-list").querySelector(".is-new")?.remove();
+  // Same layout as the rows above: name, amount + unit, − + and ✕ (which cancels).
+  const name = el("input", {
+    class: "pi-new-input", type: "text", maxlength: 120, autocomplete: "off",
+    placeholder: "New ingredient", "aria-label": "Name of the new ingredient",
+  });
+  const number = el("input", {
+    class: "pi-number", type: "text", inputmode: "decimal", placeholder: "–",
+    maxlength: 8, autocomplete: "off", "aria-label": "Amount of the new ingredient",
+  });
+  const unit = el("select", { class: "pi-unit", "aria-label": "Unit of the new ingredient" },
+    ...UNITS.map((u) => el("option", { value: u, text: UNIT_LABEL[u] ?? u })));
+  const confirm = el("button", { class: "pi-btn pi-less pi-confirm", type: "button", text: "✓", "aria-label": "Add this ingredient" });
+  const cancel = el("button", { class: "pi-btn pi-remove pi-cancel", type: "button", text: "✕", "aria-label": "Cancel new ingredient" });
+  const row = el("li", { class: "pantry-item is-new" },
+    name, el("span", { class: "pi-amount" }, number, unit), confirm, cancel);
+
+  const close = () => row.remove();
+  const commit = () => {
+    const n = number.value.trim().replace(",", ".");
+    if (!name.value.trim()) return name.focus();
+    if (n && !/^\d+(?:\.\d+)?$/.test(n)) { number.setAttribute("aria-invalid", "true"); return number.focus(); }
+    addTypedToPantry(name, `${name.value.trim()}${n ? ` ${n}${unit.value ? " " + unit.value : ""}` : ""}`);
+  };
+  // A sensible unit follows the name until you pick one yourself.
+  let picked = false;
+  unit.addEventListener("change", () => { picked = true; });
+  name.addEventListener("input", () => { if (!picked) unit.value = guessUnit(name.value); });
+  number.addEventListener("input", () => number.removeAttribute("aria-invalid"));
+  confirm.addEventListener("click", commit);
+  cancel.addEventListener("click", close);
+  row.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") close();
+  });
+  $("pantry-list").append(row);
+  row.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  name.focus({ preventScroll: true });
 }
 
 function setPantryEditing(on) {
@@ -1077,6 +1136,34 @@ function tidyPantryText(text) {
   }).join("\n");
 }
 
+// Adds what was typed ("milk 1 L, eggs") to the pantry, then scrolls to the last one added.
+function addTypedToPantry(input, text = input.value) {
+  const fresh = parsePantry(text).map(splitPantryLine);
+  if (!fresh.length) return input.focus();
+  const items = pantry().map(splitPantryLine);
+  let already = 0;
+  const unclear = [];
+  for (const f of fresh) {
+    const same = items.find((it) => it.name.toLowerCase() === f.name.toLowerCase());
+    if (!same) items.push(f);
+    else if (!f.amount) already++;
+    else if (!same.amount) same.amount = f.amount;
+    else {
+      const sum = mergeAmounts(same.amount, f.amount);
+      if (sum) same.amount = sum; else unclear.push(f.name);
+    }
+  }
+  input.value = "";
+  pantryQuery = "";
+  $("pantry-add").value = "";
+  writePantry(items);
+  input.focus({ preventScroll: true });
+  revealPantryItem(items.findIndex((it) => it.name.toLowerCase() === fresh[fresh.length - 1].name.toLowerCase()));
+  toast(unclear.length
+    ? `Couldn't add the amounts for ${unclear.join(", ")}. Change them in the list.`
+    : already === fresh.length ? "Already in your pantry" : "Added to your pantry");
+}
+
 function setupPantry() {
   $("pantry-input").value = tidyPantryText(store.load("pantry", ""));
   $("basics").checked = store.load("basics", true);
@@ -1085,30 +1172,9 @@ function setupPantry() {
 
   $("pantry-add-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    const input = $("pantry-add");
-    const fresh = parsePantry(input.value).map(splitPantryLine);
-    if (!fresh.length) return input.focus();
-    const items = pantry().map(splitPantryLine);
-    let already = 0;
-    const unclear = [];
-    for (const f of fresh) {
-      const same = items.find((it) => it.name.toLowerCase() === f.name.toLowerCase());
-      if (!same) items.push(f);
-      else if (!f.amount) already++;
-      else if (!same.amount) same.amount = f.amount;
-      else {
-        const sum = mergeAmounts(same.amount, f.amount);
-        if (sum) same.amount = sum; else unclear.push(f.name);
-      }
-    }
-    input.value = "";
-    pantryQuery = "";
-    writePantry(items);
-    input.focus();
-    toast(unclear.length
-      ? `Couldn't add the amounts for ${unclear.join(", ")}. Change them in the list.`
-      : already === fresh.length ? "Already in your pantry" : "Added to your pantry");
+    addTypedToPantry($("pantry-add"));
   });
+  $("pantry-add-btn").addEventListener("click", startNewPantryRow);
 
   $("pantry-edit").addEventListener("click", () => setPantryEditing(!pantryEditing));
   $("pantry-add").addEventListener("input", () => {
@@ -1390,6 +1456,47 @@ async function withBusyButton(form, messageId, work) {
 }
 
 // ---------- Recipe card ----------
+// ---------- Nutrition (Claude's estimate per serving) ----------
+function hasNutrition(item) {
+  const n = item?.nutrition;
+  return isObject(n) && Number.isFinite(n.calories) && n.calories > 0;
+}
+function formatNumber(n) {
+  return Math.round(n).toLocaleString("en-US");
+}
+
+// Calories, protein, carbs and fat in a row, like the panel on a food label, then the rest in one line.
+function nutritionFacts(n) {
+  if (!hasNutrition({ nutrition: n })) return null;
+  const main = [
+    [formatNumber(n.calories), "kcal", "Calories"],
+    [`${formatNumber(n.protein_g)} g`, "protein", "Protein"],
+    [`${formatNumber(n.carbs_g)} g`, "carbs", "Carbohydrates"],
+    [`${formatNumber(n.fat_g)} g`, "fat", "Fat"],
+  ];
+  return el("section", { class: "nutrition", "aria-label": "Nutrition per serving" },
+    el("dl", { class: "macros" },
+      ...main.map(([value, label, full]) => el("div", { class: "macro" },
+        el("dt", { text: label, title: full }),
+        el("dd", { text: value }),
+      )),
+    ),
+    el("p", { class: "nutrition-more" },
+      `Per serving, estimated · Fiber ${formatNumber(n.fiber_g)} g · Sugar ${formatNumber(n.sugar_g)} g · Sodium ${formatNumber(n.sodium_mg)} mg`),
+  );
+}
+
+// "1,850 kcal" under a day's date: what one person eats that day, if every meal has numbers.
+function dayTotal(meals) {
+  if (!meals.length || !meals.every(hasNutrition)) return null;
+  const kcal = meals.reduce((sum, m) => sum + m.nutrition.calories, 0);
+  const protein = meals.reduce((sum, m) => sum + m.nutrition.protein_g, 0);
+  return el("p", { class: "day-total" },
+    el("span", { text: `${formatNumber(kcal)} kcal` }),
+    el("span", { text: `${formatNumber(protein)} g protein` }),
+  );
+}
+
 function recipeCard(recipe, sourceId = recipe.title) {
   const inPlan = Boolean(planRecipes[sourceId]);
   // Once cooked, the marks stay as they were: the pantry no longer has what the recipe used.
@@ -1487,6 +1594,7 @@ function recipeCard(recipe, sourceId = recipe.title) {
       el("span", { text: `${recipe.total_time_minutes} min` }),
       el("span", { text: plural(recipe.servings, "serving", "servings") }),
     ),
+    nutritionFacts(recipe.nutrition),
     el("div", { class: "cols" },
       el("section", {}, el("h3", { text: "Ingredients" }), ingredients, legend),
       el("section", {}, el("h3", { text: "Steps" }), steps),
@@ -2294,6 +2402,75 @@ let planTicker = null;
 
 const planStepText = () => PLAN_STEPS[planStep % PLAN_STEPS.length];
 
+// One small animated drawing per planning phase, in the same order as PLAN_STEPS.
+// Drawn with SVG (createElementNS, never innerHTML).
+function phaseIcon() {
+  const NS = "http://www.w3.org/2000/svg";
+  const make = (tag, attrs, ...kids) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    node.append(...kids);
+    return node;
+  };
+  const icons = [
+    // pantry: a magnifier sweeping along the shelf
+    () => [
+      make("path", { d: "M6 47h52" }),
+      make("rect", { class: "fill soft", x: "10", y: "27", width: "12", height: "20", rx: "2" }),
+      make("rect", { class: "fill soft", x: "26", y: "21", width: "12", height: "26", rx: "2" }),
+      make("rect", { class: "fill soft", x: "42", y: "29", width: "12", height: "18", rx: "2" }),
+      make("g", { class: "scan" }, make("circle", { cx: "18", cy: "22", r: "9" }), make("path", { d: "M25 29l8 8" })),
+    ],
+    // restrictions: a shield whose check mark draws itself
+    () => [
+      make("path", { d: "M32 5l20 7v14c0 13-9 21-20 25C21 47 12 39 12 26V12z" }),
+      make("path", { class: "tick", d: "M22 27l7 7 13-14" }),
+    ],
+    // breakfasts: a fried egg with a pulsing yolk
+    () => [
+      make("path", { d: "M12 30c-2-11 8-17 19-15s21 5 19 17-13 14-23 12-13-4-15-14z" }),
+      make("circle", { class: "fill yolk", cx: "31", cy: "30", r: "8" }),
+    ],
+    // lunches and dinners: scales that keep tipping
+    () => [
+      make("path", { d: "M32 12v34M21 48h22" }),
+      make("g", { class: "beam" },
+        make("path", { d: "M8 14h48" }),
+        make("path", { d: "M8 14l-5 15h10zM56 14l-5 15h10z" })),
+    ],
+    // cooking time: a clock hand going round
+    () => [
+      make("circle", { cx: "32", cy: "28", r: "21" }),
+      make("path", { class: "soft", d: "M32 28l9 5" }),
+      make("path", { class: "hand", d: "M32 28V13" }),
+    ],
+    // shopping list: lines writing themselves
+    () => [
+      make("rect", { x: "15", y: "5", width: "34", height: "46", rx: "3" }),
+      make("path", { class: "ln l1", d: "M22 17h20" }),
+      make("path", { class: "ln l2", d: "M22 27h20" }),
+      make("path", { class: "ln l3", d: "M22 37h12" }),
+    ],
+    // new ideas: a light bulb that glows
+    () => [
+      make("path", { class: "bulb", d: "M32 9a14 14 0 0 0-8 25v6h16v-6A14 14 0 0 0 32 9z" }),
+      make("path", { d: "M26 46h12M28 51h8" }),
+      make("path", { class: "ray soft", d: "M32 1v3M10 12l3 2M54 12l-3 2M6 28h3M55 28h3" }),
+    ],
+    // putting the week together: calendar days popping in
+    () => [
+      make("rect", { x: "9", y: "10", width: "46", height: "40", rx: "3" }),
+      make("path", { d: "M9 21h46M20 5v9M44 5v9" }),
+      ...[0, 1, 2, 3, 4, 5].map((i) => make("rect", {
+        class: "fill day", x: String(15 + (i % 3) * 13), y: String(27 + Math.floor(i / 3) * 11),
+        width: "8", height: "7", rx: "1.5", style: `animation-delay:${i * 0.25}s`,
+      })),
+    ],
+  ];
+  return make("svg", { class: "phase-icon", viewBox: "0 0 64 56", width: "64", height: "56", focusable: "false" },
+    ...icons[planStep % icons.length]());
+}
+
 // The changing phrase shows inside the week being planned. Screen readers hear
 // "Planning week 1 of 4" once, not every phrase.
 function startPlanStatus(label) {
@@ -2302,7 +2479,15 @@ function startPlanStatus(label) {
   const box = $("plan-message");
   box.classList.remove("error");
   box.replaceChildren(el("span", { class: "sr-only", text: `Planning ${label.toLowerCase()}` }));
-  const draw = () => document.querySelector(".week-pending .planning-text")?.replaceChildren(...dotted(planStepText()));
+  const draw = () => {
+    const text = document.querySelector(".week-pending .planning-text");
+    if (!text) return;
+    document.querySelector(".week-pending .phase-icon")?.replaceWith(phaseIcon());
+    text.replaceChildren(...dotted(planStepText()));
+    text.classList.remove("fresh"); // restart the fade-in for each new phrase
+    void text.offsetWidth;
+    text.classList.add("fresh");
+  };
   draw();
   planTicker = setInterval(() => { planStep++; draw(); }, 3500);
 }
@@ -2461,7 +2646,8 @@ function renderPlan() {
       return el("section", { class: "week" }, weekHead,
         el("div", { class: "week-pending" },
           planning && isNext
-            ? el("p", { class: "planning-text", "aria-hidden": "true" }, ...dotted(planStepText()))
+            ? el("div", { class: "planning", "aria-hidden": "true" }, phaseIcon(),
+                el("p", { class: "planning-text" }, ...dotted(planStepText())))
             : el("p", { text: "Not planned yet." }),
           !planning && isNext && planError ? el("p", { class: "message error", text: planError }) : null,
           !planning && isNext
@@ -2489,10 +2675,13 @@ function renderPlan() {
       const wd = weekdayIndex(date);
       const meals = MEALS.map((name) => week.meals.find((m) => m.date === date && m.meal === name)).filter(Boolean);
       days.push(el("div", { class: "day" },
-        el("div", { class: "day-date" },
-          el("span", { class: "dow", text: WEEKDAYS[wd].slice(0, 3) }),
-          el("span", { class: "num", text: String(parseDate(date).getDate()) }),
-          wd >= 5 && planSettings().relaxed ? el("span", { class: "tag", text: "Relaxed" }) : null,
+        el("div", { class: "day-side" },
+          el("div", { class: "day-date" },
+            el("span", { class: "dow", text: WEEKDAYS[wd].slice(0, 3) }),
+            el("span", { class: "num", text: String(parseDate(date).getDate()) }),
+            wd >= 5 && planSettings().relaxed ? el("span", { class: "tag", text: "Relaxed" }) : null,
+          ),
+          dayTotal(meals),
         ),
         meals.length
           ? el("div", { class: "day-meals", style: `--cols: ${types.length}` },
@@ -2537,7 +2726,8 @@ function mealCard(meal) {
     el("span", { class: "title" }, ...(busy ? dotted("Finding another meal...") : [meal.title])),
     el("span", { class: "facts" },
       `${meal.total_time_minutes} min`,
-      toBuy ? ", " : ", nothing to buy",
+      hasNutrition(meal) ? ` · ${formatNumber(meal.nutrition.calories)} kcal` : "",
+      toBuy ? " · " : " · nothing to buy",
       toBuy ? el("span", { class: "tobuy", text: `${toBuy} to buy` }) : null,
     ),
   );

@@ -115,6 +115,8 @@ class PlanRecipeRequest(PantryInfo):
                     ing["buy"] = "" if ing.get("have_it") else ing.get("quantity", "")
                 if isinstance(ing, dict) and "package" not in ing:
                     ing["package"] = ""
+        if isinstance(meal, dict):
+            meal.setdefault("nutrition", None)  # plans saved before nutrition existed
         return data
 
     @model_validator(mode="after")
@@ -154,6 +156,7 @@ class RecipeChatRequest(PantryInfo):
     def fill_old_recipes(cls, data):
         if isinstance(data, dict) and isinstance(data.get("recipe"), dict):
             fill_missing_fields(data["recipe"].get("ingredients"))
+            data["recipe"].setdefault("nutrition", None)  # recipes saved before nutrition existed
         return data
 
     @model_validator(mode="after")

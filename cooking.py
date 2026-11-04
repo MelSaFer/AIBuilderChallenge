@@ -24,6 +24,17 @@ class Ingredient(BaseModel):
     package: str  # the usual store size, as a plain amount: "1 l", "12", "250 g", "1 head"
 
 
+class Nutrition(BaseModel):
+    """An estimate for ONE serving, worked out from the ingredients and quantities."""
+    calories: int  # kcal
+    protein_g: int
+    carbs_g: int
+    fat_g: int
+    fiber_g: int
+    sugar_g: int
+    sodium_mg: int
+
+
 class Recipe(BaseModel):
     title: str
     description: str
@@ -31,6 +42,7 @@ class Recipe(BaseModel):
     total_time_minutes: int
     ingredients: List[Ingredient]
     steps: List[str]
+    nutrition: Optional[Nutrition]  # per serving; always filled in by Claude, null only in old saved recipes
 
 
 class RecipeSuggestions(BaseModel):
@@ -48,6 +60,7 @@ class PlannedMeal(BaseModel):
     description: str  # one short sentence
     total_time_minutes: int
     ingredients: List[Ingredient]
+    nutrition: Optional[Nutrition]  # per serving; always filled in by Claude, null only in old saved plans
 
 
 class MealPlan(BaseModel):
@@ -89,7 +102,11 @@ Rules:
   recipe needs, set have_it false and put only the missing amount in buy (pantry "chicken 200 g",
   recipe needs "600 g": buy "400 g"). If it has enough, or no amount is given, have_it is true.
 - buy is "" when have_it is true. When the ingredient isn't in the pantry at all, buy is the full quantity.
-- Respect any dietary needs the user mentions."""
+- Respect any dietary needs the user mentions.
+- Always fill in nutrition: your best estimate for ONE serving (not the whole dish), worked out
+  from the ingredients and quantities you listed, divided by the number of servings. Calories in
+  kcal, protein, carbs (total carbohydrate), fat, fiber and sugar in whole grams, sodium in mg.
+  Count added salt, cheese, sauces and oil. Round to whole numbers."""
 
 
 class CookingError(Exception):
@@ -276,7 +293,11 @@ Ingredients:
 Restrictions everyone must respect:
 {household}
 {_pantry_text(pantry, has_basics)}"""
-    return _ask(prompt, Recipe)
+    recipe = _ask(prompt, Recipe)
+    # Same ingredients as the plan, so keep the plan's numbers: the card and the recipe agree.
+    if meal.nutrition is not None:
+        recipe.nutrition = meal.nutrition
+    return recipe
 
 
 CHAT_RULES = """
@@ -288,7 +309,7 @@ Right now you're in the kitchen with the user while they cook the recipe below, 
 - If they want the recipe changed (an ingredient they don't have or don't want, more or fewer
   servings, less time, other equipment, a dietary change), return the whole updated recipe in
   recipe, following every rule above: adjust ingredients, quantities and steps, and work out
-  have_it, buy and package again against the pantry. Update the title if it names something
+  have_it, buy, package and nutrition again against the pantry. Update the title if it names something
   you removed or replaced ("Banana Pancakes" without banana becomes "Apple Pancakes"); otherwise
   keep it. Keep the recipe in the language it's written in. In reply, say in one or two sentences
   what you changed.

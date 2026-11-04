@@ -109,7 +109,7 @@ Press **Create meal plan** when you're ready. If you already have a plan, Mise a
 
 ## 5. Your meal plan
 
-The plan shows one row per day, with its meals as cards. Each card shows the dish, its time and how many ingredients you still need to buy.
+The plan shows one row per day, with its meals as cards. Each card shows the dish, its time, its calories per serving and how many ingredients you still need to buy. Under each date you see that day's total for one person: calories and protein.
 
 - **Open a meal**: click its card to read the recipe.
 - **Swap a meal**: press the round arrows in the card's corner and Mise suggests a different dish straight away. With **Cook once, eat twice**, swapping a dinner also swaps the next day's leftovers lunch.
@@ -124,6 +124,8 @@ Mise plans one week at a time. If a week can't be planned (for example, the conn
 ## 6. Recipes
 
 A recipe shows the time, the servings, the ingredients and numbered steps.
+
+**Nutrition**: under the time and servings, a small panel shows calories, protein, carbs and fat for **one serving**, with fiber, sugar and sodium below. They're estimates worked out from the ingredients, good for a rough idea, not exact like a food label. Plans made before this feature don't have them.
 
 **What you have and what you need**
 

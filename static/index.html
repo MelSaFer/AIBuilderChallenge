@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mise</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='4' y='26' width='92' height='48' fill='%23EEDFA8' transform='rotate(-6 50 50)'/><text x='50' y='66' text-anchor='middle' font-family='Arial Narrow,Arial,sans-serif' font-weight='900' font-size='44' fill='%231C2631' transform='rotate(-6 50 50)'>Mi</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%231C2631'/><rect x='8' y='14' width='84' height='72' rx='6' fill='%23F5D466' transform='rotate(-5 50 50)'/><text x='50' y='71' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='68' fill='%231C2631' transform='rotate(-5 50 50)'>M</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=21">
-  <script src="/app.js?v=17" defer></script>
+  <link rel="stylesheet" href="/style.css?v=30">
+  <script src="/app.js?v=26" defer></script>
 </head>
 <body>
   <main>
@@ -223,6 +223,11 @@
     <p class="hint pantry-count" id="pantry-count" aria-live="polite">0 ingredients in your pantry</p>
 
     <div class="pantry-body" id="pantry-body">
+      <label class="check">
+        <input type="checkbox" id="basics" checked>
+        <span>I have basics (salt, pepper, oil, water)</span>
+      </label>
+
       <form class="pantry-add" id="pantry-add-form">
         <label for="pantry-add">Add what you have</label>
         <div class="pantry-add-row">
@@ -234,9 +239,10 @@
 
       <div class="pantry-list-head" id="pantry-list-head">
         <span class="pantry-list-title">What you have</span>
-        <div class="pantry-list-tools">
-          <button type="button" class="link-btn" id="pantry-text-toggle" aria-expanded="false" aria-controls="pantry-text" hidden>Edit as text</button>
-          <button type="button" class="btn small" id="pantry-edit" aria-pressed="false" aria-controls="pantry-list">Edit</button>
+        <button type="button" class="btn small" id="pantry-edit" aria-pressed="false" aria-controls="pantry-list">Edit</button>
+        <div class="pantry-list-tools" id="pantry-list-tools" hidden>
+          <button type="button" class="btn small" id="pantry-add-btn">+ Add</button>
+          <button type="button" class="link-btn" id="pantry-text-toggle" aria-expanded="false" aria-controls="pantry-text">Edit as text</button>
         </div>
       </div>
       <p class="pantry-find-note" id="pantry-find-note" role="status" aria-live="polite"></p>
@@ -248,11 +254,6 @@
         <textarea id="pantry-input" rows="10" placeholder="eggs 12&#10;rice 1 kg&#10;chicken breast 500 g&#10;tomatoes, onion, garlic"></textarea>
         <p class="hint">One per line or separated by commas. Good for pasting a long list.</p>
       </div>
-
-      <label class="check">
-        <input type="checkbox" id="basics" checked>
-        <span>I have basics (salt, pepper, oil, water)</span>
-      </label>
     </div>
   </aside>
 

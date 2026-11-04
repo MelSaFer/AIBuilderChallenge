@@ -48,10 +48,13 @@ h1, h2, h3 { font-family: var(--display); margin: 0; }
 /* ---------- Masking tape: the signature element ---------- */
 .tape, .wordmark, .day-date {
   display: inline-block;
+  /* Crepe-paper tape: fine fibres, a lighter band near the top and slightly darker edges */
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 40%),
+    repeating-linear-gradient(90deg, rgba(120, 90, 0, 0.05) 0 1px, transparent 1px 5px),
+    linear-gradient(180deg, rgba(120, 90, 0, 0.16), rgba(255, 255, 255, 0.28) 14%, rgba(255, 255, 255, 0.06) 60%, rgba(120, 90, 0, 0.14)),
     var(--tape);
   color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
   /* Torn ends on the left and right */
   clip-path: polygon(
     0 4%, 100% 0, calc(100% - 4px) 22%, 100% 46%, calc(100% - 3px) 70%, 100% 100%,
@@ -74,7 +77,7 @@ main {
   font-size: clamp(3.4rem, 8vw, 6rem);
   line-height: 1;
   letter-spacing: -0.01em;
-  padding: 0.12em 0.45em 0.06em;
+  padding: 0.14em 0.5em 0.08em;
   transform: rotate(-2deg);
   transform-origin: left center;
 }
@@ -453,23 +456,22 @@ fieldset.basics { border-top: 0; padding-top: 0.25rem; }
 }
 .more-options > summary::-webkit-details-marker { display: none; }
 .more-options > summary::before {
-  content: "+";
+  content: "";
   grid-row: span 2;
   align-self: center;
-  display: inline-grid;
-  place-items: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  border: 1px solid var(--marker);
-  border-radius: 4px;
-  color: var(--marker);
-  font-family: var(--display);
-  font-weight: 700;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0 0.15rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-2px) rotate(-45deg);
+  transition: transform 0.15s;
 }
-.more-options[open] > summary::before { content: "−"; }
-.more-title { font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 1.05rem; color: var(--marker); }
-.more-options > summary:hover .more-title { color: var(--marker-dark); }
-.more-what { grid-column: 2; color: var(--muted); font-size: 0.92rem; }
+.more-options[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .more-options > summary::before { transition: none; } }
+.more-title { font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 1.05rem; color: var(--ink); }
+.more-options > summary:hover .more-title { color: var(--marker); }
+.more-what { grid-column: 2; color: var(--muted); font-size: 0.88rem; line-height: 1.4; }
 .more-options[open] .more-what { display: none; }
 .more-options[open] > summary { padding-bottom: 0.25rem; }
 
@@ -626,6 +628,36 @@ fieldset.basics { border-top: 0; padding-top: 0.25rem; }
   color: var(--ink);
 }
 .pantry-add-row input::placeholder { color: var(--placeholder); }
+/* The empty row that "+ Add" opens: name on top, then amount, ✓ and ✕ underneath */
+.pantry-item.is-new {
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  grid-template-areas: "name name name name" "amount less more .";
+  row-gap: 0.45rem;
+  padding: 0.6rem 0;
+}
+.pantry-item.is-new .pi-cancel { grid-area: more; }
+.pi-new-input {
+  grid-area: name;
+  min-width: 0;
+  background: var(--paper);
+  border: 1px solid var(--marker);
+  border-radius: var(--r-control);
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: var(--ink);
+}
+.pi-confirm { background: var(--marker); border-color: var(--marker); color: #FFFFFF; }
+.pi-confirm:hover:not(:disabled) { background: var(--marker-dark); border-color: var(--marker-dark); }
+.pi-new-input::placeholder { color: var(--placeholder); }
+.pi-new-input:focus-visible { outline: 3px solid var(--marker); outline-offset: 1px; }
+
+/* The row you just added: a short marker-pen highlight */
+.pantry-item.just-added { animation: just-added 2s ease-out; }
+@keyframes just-added {
+  0%, 40% { background: rgba(31, 95, 168, 0.16); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .pantry-item.just-added { animation: none; background: rgba(31, 95, 168, 0.16); } }
 
 /* One row per ingredient: name, amount + unit, − + and remove */
 .pantry-list { list-style: none; margin: 1.25rem 0 0; padding: 0; border-top: 2px solid var(--ink); }
@@ -722,7 +754,8 @@ fieldset.basics { border-top: 0; padding-top: 0.25rem; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
   margin-top: 1.5rem;
   /* Stays at the top while you scroll a long pantry, so Edit / Done is always at hand */
   position: sticky;
@@ -740,9 +773,10 @@ fieldset.basics { border-top: 0; padding-top: 0.25rem; }
   min-height: 2.6rem;
 }
 .pi-qty { grid-area: qty; color: var(--muted); white-space: nowrap; text-align: right; }
-.pantry-list-tools { display: flex; align-items: center; gap: 0.9rem; }
+.pantry-list-tools { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.9rem; }
+.pantry-list-tools[hidden] { display: none; }
 .pantry-list-tools .link-btn { margin: 0; }
-.pantry-body > .check { margin-top: 1.25rem; }
+.pantry-body > .check { margin: 0 0 1.25rem; }
 #pantry-edit[aria-pressed="true"] { background: var(--marker); border-color: var(--marker); color: #FFFFFF; }
 
 .pantry-empty { margin: 1.25rem 0 0; color: var(--muted); font-size: 0.95rem; }
@@ -1235,6 +1269,46 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
   .dots i { animation: none; opacity: 0.7; }
 }
 
+/* Planning animation: a simmering pot with steam, and a phrase that fades in */
+.planning { display: flex; align-items: center; gap: 1rem; }
+.planning-text { margin: 0; }
+.planning-text.fresh { animation: phrase-in 0.5s ease-out; }
+@keyframes phrase-in {
+  from { opacity: 0; transform: translateY(0.4em); }
+  to { opacity: 1; transform: none; }
+}
+.phase-icon {
+  flex: none; overflow: visible; color: var(--ink);
+  fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+  animation: phrase-in 0.5s ease-out;
+}
+.phase-icon .soft { stroke: var(--muted); }
+.phase-icon .fill { fill: currentColor; stroke: none; }
+.phase-icon .fill.soft { fill: var(--muted); opacity: 0.45; }
+.phase-icon .scan { animation: scan 2.4s ease-in-out infinite; }
+.phase-icon .tick { stroke-dasharray: 34; animation: draw 1.6s ease-in-out infinite; }
+.phase-icon .yolk { transform-box: fill-box; transform-origin: center; animation: pulse 1.2s ease-in-out infinite; }
+.phase-icon .beam { transform-origin: 32px 12px; animation: tip 2s ease-in-out infinite; }
+.phase-icon .hand { transform-origin: 32px 28px; animation: spin 2.4s linear infinite; }
+.phase-icon .ln { stroke-dasharray: 22; animation: write 2.4s ease-in-out infinite; }
+.phase-icon .l2 { animation-delay: 0.4s; }
+.phase-icon .l3 { animation-delay: 0.8s; }
+.phase-icon .bulb { animation: glow 1.6s ease-in-out infinite; }
+.phase-icon .ray { animation: blink 1.6s ease-in-out infinite; }
+.phase-icon .day { transform-box: fill-box; transform-origin: center; animation: pop 2.4s ease-out infinite backwards; }
+@keyframes scan { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(24px); } }
+@keyframes draw { 0% { stroke-dashoffset: 34; } 50%, 85% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -34; } }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+@keyframes tip { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes write { 0% { stroke-dashoffset: 22; } 40%, 85% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 22; } }
+@keyframes glow { 0%, 100% { fill: transparent; } 50% { fill: var(--muted); } }
+@keyframes blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+@keyframes pop { 0% { transform: scale(0); } 20%, 85% { transform: scale(1); } 100% { transform: scale(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .planning-text.fresh, .phase-icon, .phase-icon * { animation: none !important; }
+}
+
 /* Edge adds its own eye to password fields; Mise has one already */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear { display: none; }
@@ -1337,3 +1411,41 @@ dialog.confirm-dialog { width: min(440px, calc(100vw - 2rem)); }
 .pantry-find-note { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.9rem; }
 .pantry-find-note:empty { display: none; }
 .pantry-find-note strong { color: var(--ink); }
+
+/* ---------- Nutrition: a small food-label panel on each recipe ---------- */
+.nutrition { max-width: 34rem; margin: -0.5rem 0 1.75rem; }
+.macros {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+.macro { padding: 0.45rem 0.75rem 0.5rem; display: flex; flex-direction: column-reverse; }
+.macro + .macro { border-left: 1px dashed var(--edge); }
+.macro:first-child { padding-left: 0; }
+.macro dd {
+  margin: 0;
+  font-family: var(--display);
+  font-stretch: 75%;
+  font-weight: 800;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.macro dt { font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.85rem; color: var(--muted); }
+.nutrition-more { margin: 0.45rem 0 0; color: var(--muted); font-size: 0.85rem; }
+
+/* The day's total under its date */
+.day-side { display: grid; justify-items: start; gap: 0.5rem; }
+.day-total { margin: 0; display: grid; font-family: var(--display); font-stretch: 90%; font-weight: 650; font-size: 0.8rem; line-height: 1.3; color: var(--muted); }
+.day-total span:first-child { color: var(--ink); }
+
+@media (max-width: 760px) {
+  .day-side { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .day-total { display: flex; gap: 0.6rem; }
+}
+@media (max-width: 480px) {
+  .macro { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .macro dd { font-size: 1.3rem; }
+}
