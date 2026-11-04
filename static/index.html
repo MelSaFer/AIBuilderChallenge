@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Literata:opsz,wght@7..72,400..700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=30">
-  <script src="/app.js?v=26" defer></script>
+  <link rel="stylesheet" href="/style.css?v=49">
+  <script src="/app.js?v=38" defer></script>
 </head>
 <body>
   <main>
@@ -218,7 +218,7 @@
   <aside class="pantry" id="pantry" aria-labelledby="pantry-title">
     <div class="pantry-head">
       <h2 id="pantry-title" class="tape">My pantry</h2>
-      <button type="button" class="btn small pantry-toggle" id="pantry-toggle" aria-expanded="true" aria-controls="pantry-body">Hide</button>
+      <button type="button" class="btn small pantry-toggle" id="pantry-toggle" aria-expanded="true" aria-controls="pantry-body" aria-label="Hide pantry" title="Hide pantry"><svg class="tg-pantry" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M8 12V8.5h3V12M13.5 12V7h2.5v5M7 20v1.5M17 20v1.5"/><rect x="4" y="3" width="16" height="17" rx="2"/><g class="door door-l"><rect x="4" y="3" width="8" height="17" rx="1.5"/><path d="M9.5 11.5v2.5"/></g><g class="door door-r"><rect x="12" y="3" width="8" height="17" rx="1.5"/><path d="M14.5 11.5v2.5"/></g></svg><span class="tg-text">Hide</span></button>
     </div>
     <p class="hint pantry-count" id="pantry-count" aria-live="polite">0 ingredients in your pantry</p>
 
@@ -247,7 +247,7 @@
       </div>
       <p class="pantry-find-note" id="pantry-find-note" role="status" aria-live="polite"></p>
       <ul class="pantry-list" id="pantry-list" aria-label="Ingredients in your pantry"></ul>
-      <p class="pantry-empty" id="pantry-empty">Your pantry is empty. Add what's in your kitchen and plans will use it first.</p>
+      <p class="pantry-empty" id="pantry-empty">Your pantry is empty. Add what's in your kitchen and plans will use it first. <button type="button" class="link-btn" id="pantry-paste">Or paste a whole list as text</button></p>
 
       <div class="pantry-text" id="pantry-text" hidden>
         <label for="pantry-input">Your pantry as text</label>

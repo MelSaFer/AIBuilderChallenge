@@ -1,8 +1,8 @@
 /* Mise: a prep kitchen. Steel counters, paper tickets, masking-tape labels and a blue marker.
    The tape is the one loud thing (logo, pantry title, day labels). Everything else stays quiet. */
 :root {
-  --steel: #E3E6E6;
-  --steel-deep: #D3D8D9;
+  --steel: #EBEEEE;
+  --steel-deep: #DFE4E5;
   --edge: #C3CACC;
   --paper: #FCFCFA;
   --ink: #1C2631;
@@ -327,7 +327,11 @@ fieldset > .field + .field, fieldset > .row + .field { margin-top: 1rem; }
 .items li { padding: 0.45rem 0; border-bottom: 1px dashed var(--edge); }
 .items .check { font-size: 1.05rem; }
 .items .for { display: block; color: var(--muted); font-size: 0.85rem; }
-.items .done .label { text-decoration: line-through; color: var(--muted); }
+.items .done .label {
+  color: var(--muted);
+  /* a marker line through the name; it is drawn left to right when you tick the item */
+  background: linear-gradient(currentColor, currentColor) no-repeat 0 58% / 100% 2px;
+}
 .list-actions {
   display: flex;
   flex-wrap: wrap;
@@ -602,7 +606,55 @@ fieldset.basics { border-top: 0; padding-top: 0.25rem; }
   padding: 0.25rem 0.6rem 0.2rem;
   transform: rotate(1.5deg);
 }
-.pantry-toggle { display: none; }
+.pantry-toggle { flex: none; }
+.pantry-toggle .tg-pantry { display: none; }
+
+/* ---------- Hiding the pantry, with a slide ---------- */
+/* Computer: the column slides closed to a slim strip with a vertical "My pantry" tab. */
+@media (min-width: 901px) {
+  body { transition: grid-template-columns 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+  body:has(> .pantry.collapsed) { grid-template-columns: minmax(0, 1fr) 0px; }
+  .pantry { overflow-x: hidden; transition: padding 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+  /* The inside keeps its width, so it slides out of view instead of squeezing */
+  .pantry-count, .pantry-body { width: calc(clamp(300px, 26vw, 360px) - 3rem - 1px); }
+  .pantry-count, .pantry-body, .pantry h2 { transition: opacity 0.25s ease 0.1s, visibility 0s; }
+  .pantry.collapsed { padding-left: 0; padding-right: 0; overflow-y: hidden; }
+  .pantry.collapsed .pantry-count,
+  .pantry.collapsed .pantry-body,
+  .pantry.collapsed h2 { opacity: 0; visibility: hidden; transition: opacity 0.15s ease, visibility 0s 0.15s; }
+  .pantry.collapsed h2 { position: absolute; }
+  /* The cupboard is a tab fastened to the pantry's left edge. It rides along as the pantry slides
+     in and out (same time and easing as the column), with its doors open while the pantry is shown. */
+  body { --pantry-w: clamp(300px, 26vw, 360px); }
+  body:has(> .pantry.collapsed) { --pantry-w: 0px; }
+  .pantry .pantry-toggle.btn {
+    position: fixed;
+    top: 3rem;
+    right: calc(max(0px, (100% - 1720px) / 2) + var(--pantry-w) - 1px);
+    z-index: 5;
+    width: 2.75rem;
+    height: 3.25rem;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: var(--steel-deep);
+    border: 1px solid var(--edge);
+    border-right: 0;
+    border-radius: 10px 0 0 10px;
+    transition: right 0.4s cubic-bezier(0.22, 1, 0.36, 1), background 0.15s;
+  }
+  .pantry .pantry-toggle.btn:hover { background: var(--paper); }
+  .pantry-toggle .tg-text { display: none; }
+  .pantry-toggle .tg-pantry { display: block; width: 1.75rem; height: 1.75rem; }
+  .tg-pantry .door { fill: var(--steel-deep); transform-box: fill-box; transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+  .pantry-toggle:hover .tg-pantry .door { fill: var(--paper); }
+  .tg-pantry .door * { vector-effect: non-scaling-stroke; }
+  .tg-pantry .door-l { transform-origin: left center; }
+  .tg-pantry .door-r { transform-origin: right center; }
+  /* Open while the pantry is out; a little ajar when you point at it while it's tucked away */
+  .pantry:not(.collapsed) .tg-pantry .door { transform: scaleX(0.12); }
+  .pantry.collapsed .pantry-toggle:hover .tg-pantry .door { transform: scaleX(0.8); }
+}
 .pantry .hint { color: var(--muted); font-size: 0.9rem; margin: 0.4rem 0 0; text-wrap: pretty; }
 .pantry .pantry-count { margin: 0.75rem 0 1.25rem; }
 .pantry-body { container-type: inline-size; }
@@ -843,6 +895,25 @@ dialog::backdrop { background: rgba(28, 38, 49, 0.6); }
 .dialog-when { margin: 0; font-family: var(--display); font-stretch: 90%; font-weight: 650; color: var(--muted); }
 dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 .loading-note { color: var(--muted); font-weight: 700; margin: 1.5rem 0 0; }
+.writing-steps { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+.writing-steps p { margin: 0; }
+.steps-drawing { flex: none; overflow: visible; color: var(--ink); fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.steps-drawing * { vector-effect: non-scaling-stroke; } /* the pots differ in size, the line does not */
+.steps-drawing .pot > rect { fill: var(--paper); }
+.steps-drawing .lid { transform-box: fill-box; transform-origin: 50% 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .steps-drawing .lid { animation: lid-hop 1.6s ease-in-out infinite; }
+  .steps-drawing .pot-1 .lid { animation-delay: 0.25s; }
+  .steps-drawing .pot-2 .lid { animation-delay: 0.5s; }
+}
+/* The lid lifts, tilts and drops back with a little bounce, like a pot just coming to the boil */
+@keyframes lid-hop {
+  0%, 55%, 100% { transform: none; }
+  15% { transform: translateY(-6px) rotate(-9deg); }
+  30% { transform: translateY(0) rotate(0); }
+  40% { transform: translateY(-2.5px) rotate(5deg); }
+  48% { transform: none; }
+}
 
 /* Toast */
 .toast {
@@ -896,6 +967,8 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
+  body, .pantry, .pantry-body, .pantry-count, .pantry h2, .tg-pantry .door { transition: none !important; }
+  .pantry .pantry-toggle.btn { transition: none !important; }
 }
 
 /* ---------- Phones and small tablets: pantry moves to the top ---------- */
@@ -910,17 +983,27 @@ dialog .recipe { margin: 0; border: 0; border-radius: 0; }
     padding: 1.25rem clamp(1rem, 5vw, 2rem) 1.25rem;
     overflow: visible; /* the page scrolls here, so the pantry's bar sticks to the screen */
   }
-  .pantry h2 { font-size: 1.6rem; }
-  .pantry-head { padding-top: 0; }
-  .pantry-toggle { display: inline-block; }
-  .pantry.collapsed .pantry-body { display: none; }
-  /* Folded: one slim bar, title, count and the button on a single line */
-  .pantry.collapsed { display: flex; flex-wrap: wrap; align-items: center; column-gap: 0.75rem; padding-top: 0.7rem; padding-bottom: 0.7rem; }
-  .pantry.collapsed .pantry-head { display: contents; }
-  .pantry.collapsed h2 { font-size: 1.25rem; }
-  .pantry.collapsed .pantry-count { margin: 0; flex: 1; order: 1; }
-  .pantry.collapsed .count-extra { display: none; } /* "3 ingredients", the bar already says My pantry */
-  .pantry.collapsed .pantry-toggle { order: 2; }
+  /* One bar: title, count and the button on a line; what's inside unfolds below it */
+  .pantry { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 0.75rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .pantry-head { display: contents; }
+  .pantry h2 { font-size: 1.3rem; grid-column: 1; grid-row: 1; }
+  .pantry .pantry-count { grid-column: 2; grid-row: 1; margin: 0; }
+  .pantry-toggle { grid-column: 3; grid-row: 1; }
+  .count-extra { display: none; } /* "3 ingredients": the bar already says My pantry */
+  .pantry-body {
+    grid-column: 1 / -1;
+    interpolate-size: allow-keywords; /* lets the height slide to "auto" */
+    padding-top: 1.25rem;
+    transition: height 0.35s cubic-bezier(0.22, 1, 0.36, 1), padding 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease, visibility 0s;
+  }
+  .pantry.collapsed .pantry-body {
+    height: 0;
+    padding-top: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: height 0.3s cubic-bezier(0.22, 1, 0.36, 1), padding 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.15s ease, visibility 0s 0.3s;
+  }
+  .pantry.collapsed .pantry-body, .pantry.animating .pantry-body { overflow: hidden; }
   /* The pantry bar above has its own Add button, so the tip isn't needed here */
   .pantry-tip { display: none; }
   .pantry-body { max-width: 40rem; }
@@ -1309,6 +1392,40 @@ dialog.account-dialog { width: min(440px, calc(100vw - 2rem)); }
   .planning-text.fresh, .phase-icon, .phase-icon * { animation: none !important; }
 }
 
+/* Movement: pages fade in, days slide in one after another, things respond to the pointer */
+@media (prefers-reduced-motion: no-preference) {
+  [role="tabpanel"]:not([hidden]) { animation: rise 0.35s ease-out; }
+  .day.enter { animation: rise 0.45s ease-out backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+  .btn { transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.1s; }
+  .btn:active:not(:disabled) { transform: scale(0.96); }
+  .meal-card { transition: border-color 0.15s, transform 0.15s; }
+  .meal-card:hover { transform: translateY(-2px); }
+  .meal-card:active { transform: translateY(0); }
+  dialog[open] { animation: dialog-in 0.25s ease-out; }
+  dialog[open]::backdrop { animation: fade-in 0.25s ease-out; }
+  .tabs [role="tab"] { transition: color 0.15s, border-color 0.15s; }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(14px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Small moments: they only run when you have not asked for reduced motion */
+@keyframes strike { from { background-size: 0 2px; } to { background-size: 100% 2px; } }
+@keyframes stamp { 0% { transform: scale(1.8) rotate(-8deg); opacity: 0; } 55% { transform: scale(0.92) rotate(1deg); opacity: 1; } 100% { transform: none; } }
+@keyframes tape-on { 0% { transform: translateY(-14px) rotate(-6deg) scale(1.05); opacity: 0; } 60% { transform: translateY(1px) rotate(-1.5deg); opacity: 1; } 100% { transform: rotate(-2deg); } }
+@keyframes drop-in { from { transform: translateY(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .items .just-done .label { animation: strike 0.35s ease-out; }
+  .cooked-mark.stamp { animation: stamp 0.4s cubic-bezier(0.3, 1.4, 0.5, 1); }
+  .wordmark { animation: tape-on 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.1s backwards; }
+  .pantry-item.just-added { animation: drop-in 0.35s ease-out, just-added 2s ease-out; }
+  /* Meals slide in one by one inside their day, like tickets off the printer */
+  .day.enter .meal-slot, .day.enter .meal-card.placeholder { animation: rise 0.4s ease-out backwards; animation-delay: calc(var(--i, 0) * 70ms + 120ms); }
+  .day.enter .meal-slot:nth-child(2) { animation-delay: calc(var(--i, 0) * 70ms + 200ms); }
+  .day.enter .meal-slot:nth-child(3) { animation-delay: calc(var(--i, 0) * 70ms + 280ms); }
+  .day.enter .meal-slot:nth-child(n+4) { animation-delay: calc(var(--i, 0) * 70ms + 360ms); }
+}
+
 /* Edge adds its own eye to password fields; Mise has one already */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear { display: none; }
@@ -1449,3 +1566,4 @@ dialog.confirm-dialog { width: min(440px, calc(100vw - 2rem)); }
   .macro { padding-left: 0.5rem; padding-right: 0.5rem; }
   .macro dd { font-size: 1.3rem; }
 }
+.pantry-empty .link-btn { display: block; margin: 0.6rem 0 0; }

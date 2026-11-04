@@ -929,6 +929,9 @@ function stepFor(n, unit) {
 
 // The pantry is a plain list until the user presses Edit.
 let pantryEditing = false;
+// Which shopping item was just ticked / which meal was just cooked, so only that one animates.
+let justChecked = null;
+let justCooked = null;
 // What's being typed in "Add what you have": the list narrows to it, so you see at once
 // whether you already have something. No extra field or button.
 let pantryQuery = "";
@@ -944,8 +947,10 @@ function renderPantryList() {
   const items = pantry().map(splitPantryLine);
   const textOpen = !$("pantry-text").hidden;
   $("pantry-empty").hidden = items.length > 0 || textOpen;
-  $("pantry-list-head").hidden = !items.length && !pantryEditing;
-  $("pantry-list-tools").hidden = !pantryEditing;
+  // The bar also shows while the text box is open, so there is always a way back to the list.
+  $("pantry-list-head").hidden = !items.length && !pantryEditing && !textOpen;
+  $("pantry-edit").hidden = textOpen && !pantryEditing;
+  $("pantry-list-tools").hidden = !pantryEditing && !textOpen;
   $("pantry-list").classList.toggle("is-editing", pantryEditing);
   // Rows keep their place in the whole pantry (i), so editing a filtered row changes the right line.
   const shown = items.map((item, i) => [item, i]).filter(([item]) => !pantryQuery || matchesQuery(item.name, pantryQuery));
@@ -1175,6 +1180,7 @@ function setupPantry() {
     addTypedToPantry($("pantry-add"));
   });
   $("pantry-add-btn").addEventListener("click", startNewPantryRow);
+  $("pantry-paste").addEventListener("click", () => $("pantry-text-toggle").click()); // from the empty pantry
 
   $("pantry-edit").addEventListener("click", () => setPantryEditing(!pantryEditing));
   $("pantry-add").addEventListener("input", () => {
@@ -1196,21 +1202,42 @@ function setupPantry() {
     if (opening) $("pantry-input").focus();
   });
 
-  // On small screens the pantry sits above the page as a slim bar, folded at first,
-  // so the page itself (logo, tabs, plan) is what you see when it opens.
+  // The pantry can always be hidden. On a computer it folds into a slim strip on the right
+  // (and Mise remembers that); on a phone it's a bar above the page, folded at first.
   const aside = $("pantry");
   const toggle = $("pantry-toggle");
-  const setOpen = (open) => {
+  const wide = matchMedia("(min-width: 901px)");
+  const label = () => {
+    const open = !aside.classList.contains("collapsed");
+    toggle.querySelector(".tg-text").textContent = open ? "Hide" : pantry().length ? "Show" : "Add";
+    toggle.setAttribute("aria-label", open ? "Hide pantry" : "Show pantry");
+    toggle.title = open ? "Hide pantry" : "Show pantry";
+  };
+  let settle;
+  const setOpen = (open, animate = true) => {
+    if (open === !aside.classList.contains("collapsed")) {
+      toggle.setAttribute("aria-expanded", String(open));
+      return label();
+    }
+    // While it slides, what's inside is clipped so nothing spills over the page.
+    if (animate) {
+      aside.classList.add("animating");
+      clearTimeout(settle);
+      settle = setTimeout(() => aside.classList.remove("animating"), 450);
+    }
     aside.classList.toggle("collapsed", !open);
     toggle.setAttribute("aria-expanded", String(open));
-    toggle.textContent = open ? "Hide" : pantry().length ? "Show" : "Add";
+    label();
   };
   toggle.addEventListener("click", () => {
     const opening = aside.classList.contains("collapsed");
     setOpen(opening);
-    if (opening && !pantry().length) $("pantry-add").focus(); // "Add" goes straight to the field
+    if (opening && !pantry().length) $("pantry-add").focus({ preventScroll: true }); // "Add" goes straight to the field
   });
-  setOpen(false);
+  wide.addEventListener("change", label);
+  aside.classList.add("collapsed"); // start folded, then open without animating if it should be
+  localStorage.removeItem("mise:pantry-hidden"); // older versions remembered it; now it always opens open
+  setOpen(wide.matches, false);
   openPantry = () => setOpen(true);
 
   updatePantryCount();
@@ -2090,6 +2117,7 @@ function renderShopping() {
         checkbox.checked = item.done;
         checkbox.addEventListener("change", () => {
           item.done = checkbox.checked;
+          justChecked = item.done ? key : null;
           saveShopping();
           // The list is drawn again; keep the keyboard on the same checkbox.
           $("list-content").querySelector(`input[data-key="${CSS.escape(key)}"]`)?.focus();
@@ -2113,7 +2141,9 @@ function renderShopping() {
           item.buyAmount = value;
           store.save("shopping", shopping); // no redraw, so typing isn't interrupted
         });
-        return el("li", { class: item.done ? "done" : "" },
+        const ticked = item.done && justChecked === key;
+        if (ticked) justChecked = null;
+        return el("li", { class: item.done ? (ticked ? "done just-done" : "done") : "" },
           el("label", { class: "check" },
             checkbox,
             el("span", {},
@@ -2585,10 +2615,14 @@ function addWeekToList(week, n) {
     : `Week ${n + 1} is already on your shopping list`);
 }
 
+// Days that have already slid in once, so re-drawing the plan doesn't replay the animation.
+const shownDays = new Set();
+
 function renderPlan() {
   const box = $("plan-result");
   updatePantryTip();
   if (!plan) {
+    shownDays.clear();
     box.replaceChildren();
     $("settings").open = true;
     return;
@@ -2674,7 +2708,9 @@ function renderPlan() {
       const date = addDays(week.start, d);
       const wd = weekdayIndex(date);
       const meals = MEALS.map((name) => week.meals.find((m) => m.date === date && m.meal === name)).filter(Boolean);
-      days.push(el("div", { class: "day" },
+      const fresh = !shownDays.has(date);
+      shownDays.add(date);
+      days.push(el("div", { class: fresh ? "day enter" : "day", style: `--i: ${Math.min(d, 6)}` },
         el("div", { class: "day-side" },
           el("div", { class: "day-date" },
             el("span", { class: "dow", text: WEEKDAYS[wd].slice(0, 3) }),
@@ -2734,7 +2770,8 @@ function mealCard(meal) {
 
   const slot = el("div", { class: "meal-slot" + (cooked ? " is-cooked" : "") + (busy ? " is-swapping" : ""), "data-key": key }, card);
   if (cooked) {
-    slot.append(el("span", { class: "corner cooked-mark", "aria-hidden": "true", text: "✓ Cooked" }));
+    slot.append(el("span", { class: "corner cooked-mark" + (justCooked === key ? " stamp" : ""), "aria-hidden": "true", text: "✓ Cooked" }));
+    if (justCooked === key) justCooked = null;
   } else {
     const swap = el("button", {
       type: "button",
@@ -2781,7 +2818,8 @@ async function openMeal(meal) {
 
   // Show what we already know while Claude writes the steps.
   const preview = recipeCard({ ...meal, servings: plan?.servings || 1, steps: [] }, key);
-  preview.querySelector(".steps").replaceWith(el("p", { class: "loading-note" }, ...dotted("Writing the steps...")));
+  preview.querySelector(".steps").replaceWith(el("div", { class: "loading-note writing-steps" },
+    stepsDrawing(), el("p", {}, ...dotted("Writing the steps..."))));
   body.replaceChildren(preview);
   if (!dialog.open) dialog.showModal();
 
@@ -2821,11 +2859,33 @@ function setupDialog() {
   });
 }
 
+// Three pots whose lids hop one after another, while the real steps load.
+function stepsDrawing() {
+  const NS = "http://www.w3.org/2000/svg";
+  const make = (tag, attrs, ...kids) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    node.append(...kids);
+    return node;
+  };
+  const svg = make("svg", { class: "steps-drawing", viewBox: "0 0 110 44", width: "110", height: "44", "aria-hidden": "true", focusable: "false" });
+  // Small, big and medium, all standing on the same line (y = 40).
+  [[3, 0.8], [35, 1.15], [77.5, 0.95]].forEach(([x, scale], i) => {
+    svg.append(make("g", { transform: `translate(${x} 40) scale(${scale}) translate(0 -40)`, class: `pot pot-${i}` },
+      make("rect", { x: "2", y: "22", width: "24", height: "18", rx: "4" }),
+      make("path", { d: "M2 27H-1M26 27h3" }),
+      make("g", { class: "lid" }, make("path", { d: "M3 21c2-7 20-7 22 0z" }), make("path", { d: "M14 15v-3" })),
+    ));
+  });
+  return svg;
+}
+
 // Marks a plan meal as cooked (its full recipe is stored in planRecipes), with what to undo.
 function setCooked(key, done, changes = []) {
   if (!planRecipes[key]) return;
   planRecipes[key].cooked = done;
   planRecipes[key].cookedChanges = changes;
+  justCooked = done ? key : null;
   store.save("planRecipes", planRecipes);
   const dialog = $("meal-dialog");
   if (dialog.open && dialog.dataset.key === key) {

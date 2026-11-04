@@ -24,7 +24,7 @@ Mise plans your meals around what's already in your kitchen, writes the recipes,
 Open Mise in your browser (if you run it on your own computer, the address is http://localhost:8000). The page has two parts:
 
 - **On the left**, the tabs: **Meal plan**, **Create a recipe**, **What can I cook?**, **Shopping list** and **Favorites**.
-- **On the right**, **My pantry**: the list of what you have at home. On a phone, the pantry is a slim bar at the top of the page: press **Show** (or **Add**, while it's empty) to open it and **Hide** to fold it away. The tabs fit on one line; slide them sideways to see the rest.
+- **On the right**, **My pantry**: the list of what you have at home. Press **Hide** to put the pantry away and get more room. On a computer it folds into a yellow **My pantry** tab on the right edge (click it to bring the pantry back; Mise remembers your choice). On a phone, the pantry is a slim bar at the top of the page: press **Show** (or **Add**, while it's empty) to open it. The tabs fit on one line; slide them sideways to see the rest.
 
 You don't need an account. Without one, everything is saved in the browser you're using. With one, your data follows you to any device (see [Your account](#10-your-account)).
 
