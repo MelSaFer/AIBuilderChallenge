@@ -6,3 +6,7 @@ CLAUDE.md
 
 # Reports from the impeccable design plugin (kept locally)
 .impeccable/
+
+# Cost exports and screenshots (kept locally, not in the public repo)
+docs/*.csv
+docs/image.png

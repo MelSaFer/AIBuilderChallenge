@@ -97,7 +97,7 @@ In practice:
 - **Planning a week costs less than a cent**, about 150 week plans per dollar. Recipe steps are only written when a meal is opened, so a meal you never open costs nothing extra.
 - Even if every recipe of the week is opened, a household's whole week costs **under 5 cents**.
 
-**Real bill.** The Claude Console cost report for this project's API key, from October 6 to November 4, 2026, shows a total of **$0.35**. It matches the token export (`docs/claude_api_tokens_2026_10_06_to_2026_11_04.csv`) at the prices above:
+**Real bill.** The Claude Console cost report for this project's API key, from October 6 to November 4, 2026, shows a total of **$0.35**. It matches the Console's token usage export for the same period at the prices above:
 
 | Day (UTC) | Model | Input tokens | Output tokens | Cost |
 |---|---|---|---|---|
