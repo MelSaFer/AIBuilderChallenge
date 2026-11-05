@@ -6,7 +6,7 @@
 |---|---|
 | **Project** | AI Builder Challenge |
 | **Status** | Working prototype, runs locally |
-| **Repository** | https://github.com/MelSaFer/AIBuilderChallenge (branch `main`) |
+| **Repository** | https://github.com/MelSaFer/Mise (branch `main`) |
 | **User manual** | `docs/USER_MANUAL.md` in the repository |
 | **Stack** | HTML, CSS and JavaScript · Python (FastAPI) · Claude API (Haiku 5.5) · Supabase |
 
